@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
     Text, View, StyleSheet, TouchableOpacity,
-    ActivityIndicator, Animated,
+    ActivityIndicator, Animated, TextInput, Keyboard,
 } from 'react-native';
 import {
     Camera,
@@ -13,7 +13,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { getProductByBarcode } from '../services/api';
 import { saveToHistory } from '../services/history';
-import { XCircle, RefreshCw } from 'lucide-react-native';
+import { XCircle, RefreshCw, Hash } from 'lucide-react-native';
 import { Colors, Spacing, Radius } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Scan'>;
@@ -33,6 +33,8 @@ export default function ScanScreen({ navigation }: Props) {
     const [attempt, setAttempt] = useState(0);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [errorType, setErrorType] = useState<ErrType | null>(null);
+    const [showManualEntry, setShowManualEntry] = useState(false);
+    const [manualBarcode, setManualBarcode] = useState('');
     const lastBarcode = useRef<string | null>(null);
     const scanLineAnim = useRef(new Animated.Value(0)).current;
 
@@ -126,6 +128,33 @@ export default function ScanScreen({ navigation }: Props) {
                 setLoading(false);
             });
         }
+    };
+
+    const handleManualLookup = async () => {
+        const code = manualBarcode.trim();
+        if (!code) return;
+        Keyboard.dismiss();
+        setShowManualEntry(false);
+        setActive(false);
+        setLoading(true);
+        setErrorMsg(null);
+        setErrorType(null);
+        lastBarcode.current = code;
+        setAttempt(1);
+
+        const { product, error } = await fetchWithRetry(code);
+        if (product) {
+            await saveToHistory(product);
+            navigation.navigate('Result', { product });
+        } else if (error) {
+            setErrorType('generic');
+            setErrorMsg(`Error: ${error.message || 'Unknown'}. Tap Retry.`);
+        } else {
+            setErrorType('notfound');
+            setErrorMsg('Product not found in database. Try snapping the ingredients label.');
+        }
+        setLoading(false);
+        setAttempt(0);
     };
 
     // ── Permission gate ──────────────────────────────────────────────────────
@@ -240,6 +269,52 @@ export default function ScanScreen({ navigation }: Props) {
                     </View>
                 </View>
             )}
+
+            {/* ── Manual Entry Button ── */}
+            {!loading && !showManualEntry && (
+                <TouchableOpacity
+                    style={styles.manualEntryBtn}
+                    onPress={() => { setShowManualEntry(true); setActive(false); }}
+                >
+                    <Hash color="#fff" size={16} />
+                    <Text style={styles.manualEntryBtnText}>Enter barcode manually</Text>
+                </TouchableOpacity>
+            )}
+
+            {/* ── Manual Entry Input ── */}
+            {showManualEntry && (
+                <View style={styles.manualEntryOverlay}>
+                    <View style={styles.manualEntryCard}>
+                        <Text style={styles.manualEntryTitle}>Enter Barcode</Text>
+                        <TextInput
+                            style={styles.manualEntryInput}
+                            placeholder="e.g. 8901058000109"
+                            placeholderTextColor={Colors.textMuted}
+                            value={manualBarcode}
+                            onChangeText={setManualBarcode}
+                            keyboardType="number-pad"
+                            autoFocus
+                            maxLength={20}
+                            returnKeyType="search"
+                            onSubmitEditing={handleManualLookup}
+                        />
+                        <View style={styles.manualEntryActions}>
+                            <TouchableOpacity
+                                style={[styles.manualEntryActionBtn, { backgroundColor: Colors.textMuted }]}
+                                onPress={() => { setShowManualEntry(false); setManualBarcode(''); setActive(true); }}
+                            >
+                                <Text style={styles.manualEntryActionText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.manualEntryActionBtn, { backgroundColor: Colors.primary }]}
+                                onPress={handleManualLookup}
+                            >
+                                <Text style={styles.manualEntryActionText}>Search</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            )}
         </View>
     );
 }
@@ -285,4 +360,31 @@ const styles = StyleSheet.create({
     errorActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
     retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.sm, backgroundColor: 'rgba(255,255,255,0.25)' },
     retryBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+    manualEntryBtn: {
+        position: 'absolute', bottom: 100, alignSelf: 'center',
+        flexDirection: 'row', alignItems: 'center', gap: 6,
+        backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 16, paddingVertical: 10,
+        borderRadius: Radius.full, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
+    },
+    manualEntryBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+    manualEntryOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        justifyContent: 'center', alignItems: 'center', padding: Spacing.xl,
+    },
+    manualEntryCard: {
+        backgroundColor: '#fff', borderRadius: Radius.xl, padding: Spacing.xl,
+        width: '100%', maxWidth: 340,
+    },
+    manualEntryTitle: { fontSize: 18, fontWeight: '800', color: Colors.textPrimary, marginBottom: Spacing.md, textAlign: 'center' },
+    manualEntryInput: {
+        backgroundColor: Colors.background, borderRadius: Radius.md,
+        paddingHorizontal: Spacing.md, paddingVertical: 14,
+        fontSize: 18, fontWeight: '600', color: Colors.textPrimary,
+        textAlign: 'center', letterSpacing: 2,
+        borderWidth: 1, borderColor: Colors.border,
+    },
+    manualEntryActions: { flexDirection: 'row', gap: 10, marginTop: Spacing.lg },
+    manualEntryActionBtn: { flex: 1, paddingVertical: 12, borderRadius: Radius.full, alignItems: 'center' },
+    manualEntryActionText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

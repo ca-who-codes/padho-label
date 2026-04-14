@@ -24,7 +24,12 @@ const buildSystemPrompt = (
     constraints?: HealthConstraints | null,
 ): string => {
     const n = product.nutrition;
-    const productContext = `
+    const isGeneralQuery = product.barcode === 'general';
+
+    const productContext = isGeneralQuery ? `
+No specific product is being analysed. The user is asking general nutrition/health questions.
+Answer general nutrition questions using your knowledge. Be helpful and accurate.
+` : `
 PRODUCT DATA (use ONLY this — do not invent any other facts):
 Name: ${product.name}
 Brand: ${product.brand || 'Unknown'}

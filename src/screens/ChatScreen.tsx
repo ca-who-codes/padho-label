@@ -14,7 +14,7 @@ import { UserProfile, HealthConstraints } from '../types';
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
 export default function ChatScreen({ route, navigation }: Props) {
-    const { product } = route.params || {};
+    const product = route.params?.product ?? undefined;
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [constraints, setConstraints] = useState<HealthConstraints | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -40,7 +40,8 @@ export default function ChatScreen({ route, navigation }: Props) {
         const newMessages: ChatMessage[] = [...messages, { role: 'user', text: userText }];
         setMessages(newMessages);
         setLoading(true);
-        const response = await sendMessageToAI(userText, product as any, newMessages.slice(1), profile as any, constraints as any);
+        const dummyProduct = { barcode: 'general', name: 'General Query', nutrition: {} as any, scannedAt: Date.now() };
+        const response = await sendMessageToAI(userText, product || dummyProduct, newMessages.slice(1), profile, constraints);
         setMessages(prev => [...prev, { role: 'model', text: response }]);
         setLoading(false);
     }, [input, loading, messages, product, profile, constraints]);
@@ -52,12 +53,19 @@ export default function ChatScreen({ route, navigation }: Props) {
     const isBeauty = product?.category === 'beauty';
     const primaryColor = isBeauty ? '#E91E63' : Colors.primary;
 
-    const suggestedQuestions = [
-        profile?.conditions.includes('diabetes') ? 'Is this safe for a diabetic?' : 'Is this a healthy choice?',
-        'What are the high-risk additives?',
-        'How much should I eat per day?',
-        profile?.goals.includes('weight_loss') ? 'Will this help me lose weight?' : 'What nutrients does this provide?',
-    ];
+    const suggestedQuestions = product
+        ? [
+            profile?.conditions?.includes('diabetes') ? 'Is this safe for a diabetic?' : 'Is this a healthy choice?',
+            'What are the high-risk additives?',
+            'How much should I eat per day?',
+            profile?.goals?.includes('weight_loss') ? 'Will this help me lose weight?' : 'What nutrients does this provide?',
+        ]
+        : [
+            'What should I look for on food labels?',
+            'How much sugar is too much per day?',
+            'What are the worst food additives?',
+            profile?.goals?.includes('weight_loss') ? 'Best snacks for weight loss?' : 'How to read a Nutri-Score?',
+        ];
 
     return (
         <KeyboardAvoidingView style={styles.wrapper} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
@@ -71,7 +79,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                 </View>
                 <View style={{ flex: 1 }}>
                     <Text style={styles.headerName}>TIA – Nutrition Coach</Text>
-                    <Text style={styles.headerSub}>Analysing: {product.name}</Text>
+                    <Text style={styles.headerSub}>{product ? `Analysing: ${product.name}` : 'Your health assistant'}</Text>
                 </View>
             </View>
 
@@ -96,13 +104,11 @@ export default function ChatScreen({ route, navigation }: Props) {
                 ))}
 
                 {loading && (
-                    <View style={styles.rowBot}>
+                    <View style={[styles.msgRow, styles.rowBot]}>
                         <View style={[styles.avatar, { backgroundColor: primaryColor }]}><Sparkles color="#fff" size={14} /></View>
-                        {product && (
-                            <View style={styles.productBadge}>
-                                <Text style={styles.productBadgeText}>Analysing: {product.name}</Text>
-                            </View>
-                        )}
+                        <View style={[styles.bubble, styles.bubbleBot]}>
+                            <Text style={[styles.msgText, styles.msgTextBot]}>Thinking...</Text>
+                        </View>
                     </View>
                 )}
 

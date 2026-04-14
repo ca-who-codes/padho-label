@@ -15,6 +15,8 @@ import { getHistory } from '../services/history';
 import { calculateNutriScore } from '../services/ratingEngine';
 import { getTopBySubCategory, GRADE_COLOR, LeaderboardEntry, LEADERBOARD_DATA } from '../data/leaderboardData';
 import { getFavorites, toggleFavorite } from '../services/favorites';
+import { searchProducts } from '../services/api';
+import { saveToHistory } from '../services/history';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -60,6 +62,9 @@ export default function HomeScanScreen({ navigation }: Props) {
     const [userName, setUserName] = useState('');
     const [points, setPoints] = useState(0);
     const [streak, setStreak] = useState(0);
+    const [apiResults, setApiResults] = useState<Product[]>([]);
+    const [searching, setSearching] = useState(false);
+    const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         loadData();
@@ -217,11 +222,40 @@ export default function HomeScanScreen({ navigation }: Props) {
         </View>
     );
 
+    // Debounced API search when query changes
+    useEffect(() => {
+        const query = searchQuery.trim();
+        if (query.length < 2) {
+            setApiResults([]);
+            setSearching(false);
+            return;
+        }
+        setSearching(true);
+        if (searchTimer.current) clearTimeout(searchTimer.current);
+        searchTimer.current = setTimeout(async () => {
+            try {
+                const results = await searchProducts(query, 15);
+                setApiResults(results);
+            } catch {
+                setApiResults([]);
+            }
+            setSearching(false);
+        }, 500);
+        return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+    }, [searchQuery]);
+
+    // Combine local leaderboard matches + API results (deduplicated)
     const filteredSearch = searchQuery.trim().length > 0
-        ? LEADERBOARD_DATA.filter(item =>
-            item.name.toLowerCase().indexOf(searchQuery.toLowerCase()) !== -1 ||
-            item.brand.toLowerCase().indexOf(searchQuery.toLowerCase()) !== -1
-        ).slice(0, 20)
+        ? (() => {
+            const q = searchQuery.toLowerCase();
+            const localMatches = LEADERBOARD_DATA.filter(item =>
+                item.name.toLowerCase().indexOf(q) !== -1 ||
+                item.brand.toLowerCase().indexOf(q) !== -1
+            );
+            const localBarcodes = new Set(localMatches.map(m => m.barcode));
+            const apiExtra = apiResults.filter(p => !localBarcodes.has(p.barcode));
+            return [...localMatches, ...apiExtra].slice(0, 25);
+        })()
         : [];
 
     const renderHeader = useCallback(() => (
@@ -344,11 +378,13 @@ export default function HomeScanScreen({ navigation }: Props) {
 
             {searchQuery.trim().length > 0 && (
                 <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Search Results ({filteredSearch.length})</Text>
+                    <Text style={styles.sectionTitle}>
+                        {searching ? 'Searching...' : `Search Results (${filteredSearch.length})`}
+                    </Text>
                 </View>
             )}
         </>
-    ), [fadeAnim, slideAnim, userName, points, streak, tipIndex, searchQuery, recentScans, topFood, topBeauty, favBarcodes, getGreeting, navigation, renderCategorySection]);
+    ), [fadeAnim, slideAnim, userName, points, streak, tipIndex, searchQuery, searching, recentScans, topFood, topBeauty, favBarcodes, getGreeting, navigation, renderCategorySection]);
 
     return (
         <FlatList
@@ -359,13 +395,15 @@ export default function HomeScanScreen({ navigation }: Props) {
             showsVerticalScrollIndicator={false}
             ListHeaderComponent={renderHeader}
             renderItem={({ item }: { item: any }) => {
-                const rating = item.grade ? { grade: item.grade, score: item.score, color: GRADE_COLOR[item.grade] } : calculateNutriScore(item.nutrition);
+                const rating = item.grade ? { grade: item.grade, score: item.score, color: GRADE_COLOR[item.grade] } : calculateNutriScore(item.nutrition || {});
                 return (
                     <TouchableOpacity
                         style={styles.recentItem}
-                        onPress={() => navigation.navigate('Result', {
-                            product: item.nutrition ? item : { ...item, nutrition: {} }
-                        })}
+                        onPress={async () => {
+                            const product = item.nutrition ? item : { ...item, nutrition: {} };
+                            if (item.nutrition) await saveToHistory(product);
+                            navigation.navigate('Result', { product });
+                        }}
                         activeOpacity={0.8}
                     >
                         {item.image_url ? (
