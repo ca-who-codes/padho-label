@@ -185,6 +185,19 @@ export type Badge = {
     earnedAt?: number;
 };
 
+// ─── AI Assistants ────────────────────────────────────────────────────────────
+
+export type AIAssistantId = 'claude' | 'zomato' | 'zepto';
+
+export type AIAssistantMeta = {
+    id: AIAssistantId;
+    name: string;
+    tagline: string;
+    description: string;
+    color: string;
+    features: string[];
+};
+
 // ─── Navigation ────────────────────────────────────────────────────────────────
 
 export type RootStackParamList = {
@@ -202,4 +215,5 @@ export type RootStackParamList = {
     Pantry: undefined;
     Challenges: undefined;
     Profile: undefined;
+    AIAssistants: undefined;
 };

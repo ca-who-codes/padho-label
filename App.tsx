@@ -24,6 +24,7 @@ import { Colors } from './src/theme';
 import { isOnboardingDone } from './src/services/userProfileService';
 
 import { AuthScreen } from './src/screens/AuthScreen';
+import AIAssistantsScreen from './src/screens/AIAssistantsScreen';
 import { supabase } from './src/services/supabaseClient';
 import { Session } from '@supabase/supabase-js';
 
@@ -94,6 +95,7 @@ export default function App() {
   const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
 
   useEffect(() => {
     // 1. Check onboarding
@@ -102,9 +104,10 @@ export default function App() {
       setOnboardingChecked(true);
     });
 
-    // 2. Initial Session Check
+    // 2. Initial Session Check — must complete before first render to avoid Auth flash
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       setSession(session);
+      setSessionChecked(true);
     });
 
     // 3. Listen for changes
@@ -115,7 +118,8 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (!onboardingChecked) return null; // Splash-style hold
+  // Hold render until both onboarding and session are resolved to prevent Auth flash
+  if (!onboardingChecked || !sessionChecked) return null;
 
   return (
     <NavigationContainer>
@@ -138,6 +142,7 @@ export default function App() {
             <Stack.Screen name="History" component={HistoryScreen} options={{ headerShown: true, title: 'Scan History', headerStyle: { backgroundColor: '#fff' }, headerTintColor: Colors.textPrimary }} />
             <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: true, title: 'Settings', headerStyle: { backgroundColor: '#fff' }, headerTintColor: Colors.textPrimary }} />
             <Stack.Screen name="Challenges" component={ChallengesScreen} />
+            <Stack.Screen name="AIAssistants" component={AIAssistantsScreen} options={{ headerShown: false }} />
             {/* Aliases for tab screens that may be navigated to directly */}
             <Stack.Screen name="Home" component={HomeScanScreen} options={{ headerShown: false }} />
             <Stack.Screen name="Scan" component={ScanScreen} options={{ headerShown: false }} />

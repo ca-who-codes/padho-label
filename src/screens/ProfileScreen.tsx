@@ -15,9 +15,10 @@ import { getHistoryCount, clearHistory } from '../services/history';
 import { Colors, Spacing, Radius, Shadow, APP_VERSION } from '../theme';
 import {
     User, Zap, Flame, Trophy, ChevronRight, History,
-    Settings, Trash2, ShieldCheck, Heart, Star, LogOut
+    Settings, Trash2, ShieldCheck, Heart, Star, LogOut, Brain,
 } from 'lucide-react-native';
 import { supabase } from '../services/supabaseClient';
+import { getAIConnections } from '../services/aiConnectionsService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Profile'>;
 
@@ -27,17 +28,28 @@ export default function ProfileScreen({ navigation }: Props) {
     const [streak, setStreak] = useState({ current: 0, best: 0 });
     const [scanCount, setScanCount] = useState(0);
     const [badges, setBadges] = useState(ALL_BADGES);
+    const [aiConnectionCount, setAiConnectionCount] = useState(0);
 
     const load = useCallback(async () => {
-        const [p, pts, str, count, bs] = await Promise.all([
+        const [p, pts, str, count, bs, aiConns] = await Promise.all([
             getUserProfile(), getTotalPoints(), getStreak(), getHistoryCount(), getEarnedBadges(),
+            getAIConnections(),
         ]);
         setProfile(p);
         setPoints(pts);
         setStreak(str);
         setScanCount(count);
         setBadges(bs);
+        setAiConnectionCount(Object.keys(aiConns).length);
     }, []);
+
+    // Reload AI connection count when screen is focused
+    useEffect(() => {
+        const unsubscribe = navigation.addListener('focus', () => {
+            getAIConnections().then(c => setAiConnectionCount(Object.keys(c).length));
+        });
+        return unsubscribe;
+    }, [navigation]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -93,6 +105,22 @@ export default function ProfileScreen({ navigation }: Props) {
                     </View>
                 </View>
             )}
+
+            {/* AI Assistants */}
+            <TouchableOpacity style={[styles.navRow, styles.navRowHighlight]} onPress={() => navigation.navigate('AIAssistants')}>
+                <Brain color="#7C3AED" size={20} />
+                <View style={{ flex: 1 }}>
+                    <Text style={styles.navLabel}>AI Assistants</Text>
+                    <Text style={styles.navSublabel}>
+                        {aiConnectionCount === 0
+                            ? 'Connect Claude, Zomato & Zepto'
+                            : `${aiConnectionCount} connected · TIA is fully set up`}
+                    </Text>
+                </View>
+                {aiConnectionCount === 0
+                    ? <View style={styles.setupBadge}><Text style={styles.setupBadgeText}>Set up</Text></View>
+                    : <ChevronRight color={Colors.textMuted} size={18} />}
+            </TouchableOpacity>
 
             {/* Challenges shortcut */}
             <TouchableOpacity style={styles.navRow} onPress={() => navigation.navigate('Challenges')}>
@@ -163,7 +191,11 @@ const styles = StyleSheet.create({
     profileChipText: { fontSize: 12, color: Colors.primary, fontWeight: '700' },
 
     navRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', marginHorizontal: Spacing.md, marginBottom: 8, borderRadius: Radius.md, padding: Spacing.md, gap: 12, ...Shadow.sm },
+    navRowHighlight: { borderWidth: 1.5, borderColor: '#7C3AED' + '30', backgroundColor: '#F5F0FF' },
     navLabel: { flex: 1, fontSize: 15, color: Colors.textPrimary, fontWeight: '600' },
+    navSublabel: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
+    setupBadge: { backgroundColor: '#7C3AED', borderRadius: Radius.full, paddingHorizontal: 10, paddingVertical: 4 },
+    setupBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
 
     aboutRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
     aboutText: { fontSize: 13, color: Colors.textSecondary },
