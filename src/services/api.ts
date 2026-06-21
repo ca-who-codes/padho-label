@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { Product, NutritionData } from '../types';
+import { getProductFromCatalog } from './productCatalog';
 
 const PRIMARY_FOOD_URL = 'https://world.openfoodfacts.org/api/v2';
 const BACKUP_FOOD_URL = 'https://in.openfoodfacts.org/api/v2';       // India-specific
@@ -18,38 +19,61 @@ const FIELDS = [
     'ingredients_text',
     'ingredients_text_en',
     'additives_tags',
+    'categories_tags',
     'allergens_from_ingredients',
 ].join(',');
+
+/**
+ * Map Open Food Facts `categories_tags` (e.g. ["en:biscuits","en:sugary-snacks"])
+ * to a scoring sub-category the rating engine has tuned thresholds for. Ordered
+ * most-specific first so e.g. biscuits win over the generic "snacks".
+ */
+const CATEGORY_MATCHERS: [RegExp, string][] = [
+    [/biscuit/, 'biscuits'],
+    [/cookie/, 'cookies'],
+    [/cereal/, 'cereals'],
+    [/breakfast/, 'breakfast'],
+    [/\boils?\b|vegetable-oil|olive-oil|ghee/, 'oils'],
+    [/soda|carbonated|cola|energy-drink|soft-drink/, 'drinks'],
+    [/juice|beverage|drinks|tea|coffee|squash/, 'beverages'],
+    [/dair|milk|yogurt|yoghurt|cheese|curd|paneer/, 'dairy'],
+    [/snack|chips|crisps|namkeen|wafer|nachos/, 'snacks'],
+];
+
+export function deriveSubCategory(categoriesTags?: string[]): string | undefined {
+    if (!Array.isArray(categoriesTags) || categoriesTags.length === 0) return undefined;
+    const joined = categoriesTags.join(' ').toLowerCase();
+    for (const [re, key] of CATEGORY_MATCHERS) {
+        if (re.test(joined)) return key;
+    }
+    return undefined;
+}
 
 function safeNum(val: any): number | undefined {
     const n = parseFloat(val);
     return isNaN(n) ? undefined : n;
 }
 
-const performLookup = async (baseUrl: string, barcode: string) => {
+type LookupResult = { product: any | null; networkError: boolean };
+
+/**
+ * Fetch a single endpoint. Distinguishes a genuine "product not in DB"
+ * (networkError: false, product: null) from a connectivity failure
+ * (networkError: true) so the caller can retry blips instead of treating
+ * them as "not found".
+ */
+const performLookup = async (url: string, withFields: boolean): Promise<LookupResult> => {
     try {
-        const response = await axios.get(`${baseUrl}/product/${barcode}.json`, {
-            params: { fields: FIELDS },
+        const response = await axios.get(url, {
+            params: withFields ? { fields: FIELDS } : undefined,
             timeout: 8000,
         });
-        if (response.data.status === 0 || !response.data.product) return null;
-        return response.data.product;
+        if (response.data?.status === 0 || !response.data?.product) {
+            return { product: null, networkError: false };
+        }
+        return { product: response.data.product, networkError: false };
     } catch {
-        return null;
-    }
-};
-
-/** v0 endpoint has slightly different URL format but broader data */
-const performV0Lookup = async (barcode: string) => {
-    try {
-        const response = await axios.get(
-            `https://world.openfoodfacts.org/api/v0/product/${barcode}.json`,
-            { timeout: 8000 },
-        );
-        if (response.data.status === 0 || !response.data.product) return null;
-        return response.data.product;
-    } catch {
-        return null;
+        return { product: null, networkError: true };
     }
 };
 
@@ -126,37 +150,40 @@ function mapProductData(productData: any, barcode: string, isCosmetic = false): 
             : undefined,
         scannedAt: Date.now(),
         category: isCosmetic ? 'beauty' : 'food',
+        subCategory: isCosmetic ? undefined : deriveSubCategory(productData.categories_tags),
         allergens: productData.allergens_from_ingredients,
     };
 }
 
+/**
+ * Look a product up across Open Food Facts (world, India mirror, v0) and
+ * Open Beauty Facts, in order. Returns the first match.
+ *
+ * @returns the Product, or null if it is genuinely not in any database.
+ * @throws  Error('network') if every attempt failed due to connectivity, so
+ *          the caller can retry rather than treat it as "not found".
+ */
 export const getProductByBarcode = async (barcode: string): Promise<Product | null> => {
-    try {
-        // 1. Try Primary Food API (world)
-        let productData = await performLookup(PRIMARY_FOOD_URL, barcode);
+    // 0. Curated Airtable catalog first (authoritative for D2C / new SKUs).
+    //    Best-effort: returns null if unconfigured, missing, or erroring.
+    const catalogHit = await getProductFromCatalog(barcode);
+    if (catalogHit) return catalogHit;
 
-        // 2. Try India-specific OFF mirror
-        if (!productData) {
-            productData = await performLookup(BACKUP_FOOD_URL, barcode);
-        }
+    const endpoints: { url: string; withFields: boolean; beauty: boolean }[] = [
+        { url: `${PRIMARY_FOOD_URL}/product/${barcode}.json`, withFields: true, beauty: false },
+        { url: `${BACKUP_FOOD_URL}/product/${barcode}.json`, withFields: true, beauty: false },
+        { url: `${WORLD_BACKUP_URL}/product/${barcode}.json`, withFields: false, beauty: false },
+        { url: `${BEAUTY_URL}/product/${barcode}.json`, withFields: true, beauty: true },
+    ];
 
-        // 3. Try v0 API (sometimes has entries v2 misses)
-        if (!productData) {
-            productData = await performV0Lookup(barcode);
-        }
-
-        // 4. Try Beauty Facts API if food fails
-        let isCosmetic = false;
-        if (!productData) {
-            productData = await performLookup(BEAUTY_URL, barcode);
-            if (productData) isCosmetic = true;
-        }
-
-        if (!productData) return null;
-
-        return mapProductData(productData, barcode, isCosmetic);
-    } catch (error) {
-        console.error('Error fetching product:', error);
-        throw error;
+    let sawNetworkError = false;
+    for (const ep of endpoints) {
+        const { product, networkError } = await performLookup(ep.url, ep.withFields);
+        if (networkError) { sawNetworkError = true; continue; }
+        if (product) return mapProductData(product, barcode, ep.beauty);
     }
+
+    // Every attempt failed on connectivity (none returned a definitive miss).
+    if (sawNetworkError) throw new Error('network error');
+    return null;
 };

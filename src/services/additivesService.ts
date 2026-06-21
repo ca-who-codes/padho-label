@@ -124,23 +124,33 @@ const ADDITIVES_DB: Additive[] = [
 /**
  * Scans an ingredients string and returns matched additives.
  */
+const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 export const findAdditives = (ingredientsText: string): Additive[] => {
     if (!ingredientsText) return [];
     const text = ingredientsText.toLowerCase();
     const found: Additive[] = [];
-    const seenIds: string[] = [];
+    const seen = new Set<string>();
 
-    ADDITIVES_DB.forEach(additive => {
-        if (seenIds.indexOf(additive.id) !== -1) return;
-        const idPattern = additive.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const idRegex = new RegExp(`\\b${idPattern}\\b`, 'i');
-        const nameRegex = new RegExp(`\\b${additive.name.split(' ')[0].toLowerCase()}\\b`, 'i');
+    for (const additive of ADDITIVES_DB) {
+        if (seen.has(additive.id)) continue;
 
-        if (idRegex.test(text) || nameRegex.test(text)) {
+        // E/INS number, e.g. "E472e" → matches "e472e", "ins 472e", "e-472e".
+        // Requires an e/ins prefix so we never match a bare number.
+        const numPart = escapeRegExp(additive.id.replace(/^e/i, '').toLowerCase());
+        const idRegex = new RegExp(`\\b(?:e|ins)\\s?-?${numPart}\\b`, 'i');
+
+        // Full additive name (parenthetical aliases stripped), matched as a
+        // whole phrase — never just the first word, which caused e.g. every
+        // product containing "sodium" to flag "Sodium Benzoate".
+        const namePart = additive.name.split('(')[0].trim().toLowerCase();
+        const nameMatch = namePart.length >= 4 && text.includes(namePart);
+
+        if (idRegex.test(text) || nameMatch) {
             found.push(additive);
-            seenIds.push(additive.id);
+            seen.add(additive.id);
         }
-    });
+    }
 
     // Sort: high → moderate → minimal
     const order: Record<ConcernLevel, number> = { high: 0, moderate: 1, minimal: 2 };

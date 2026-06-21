@@ -45,9 +45,13 @@ jobs:
       - name: Build Android production AAB (Local)
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
-          EXPO_PUBLIC_GEMINI_API_KEY: ${{ secrets.EXPO_PUBLIC_GEMINI_API_KEY }}
+          # All optional — the app builds & runs fine without any of these.
+          # Curated Airtable catalog (read-only, base-scoped token):
+          EXPO_PUBLIC_AIRTABLE_BASE_ID: ${{ secrets.EXPO_PUBLIC_AIRTABLE_BASE_ID }}
+          EXPO_PUBLIC_AIRTABLE_TOKEN: ${{ secrets.EXPO_PUBLIC_AIRTABLE_TOKEN }}
+          EXPO_PUBLIC_AIRTABLE_TABLE: ${{ secrets.EXPO_PUBLIC_AIRTABLE_TABLE }}
+          # Free OCR.space key for the "scan the label" fallback:
+          EXPO_PUBLIC_OCRSPACE_API_KEY: ${{ secrets.EXPO_PUBLIC_OCRSPACE_API_KEY }}
         run: |
           eas build \
             --platform android \

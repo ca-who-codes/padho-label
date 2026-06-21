@@ -1,37 +1,29 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, Image, TouchableOpacity,
-    Share, Dimensions, Modal, Animated,
+    Share, Modal,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../types';
-import { calculateNutriScore, calculatePersonalizedScore, generateForYouBullets, RDA, getVerdictText } from '../services/ratingEngine';
+import { RootStackParamList, HealthConstraints } from '../types';
+import {
+    calculateNutriScore, calculatePersonalizedScore, generateForYouBullets,
+    getVerdictText, nutriScoreToPercent,
+} from '../services/ratingEngine';
 import { findAdditives, getConcernColor, getAdditiveSummary } from '../services/additivesService';
 import { findChemicals, calculateSafetyScore } from '../services/beautyService';
 import { isFavorite as checkFav, toggleFavorite } from '../services/favorites';
 import { addToPantry, isInPantry } from '../services/pantryService';
 import { getHealthConstraints } from '../services/userProfileService';
-import { recordScanForStreak, addPoints, hasBadge, awardBadge } from '../services/pointsService';
-import { getTopBySubCategory } from '../data/leaderboardData';
 import {
-    ArrowLeft, Heart, Share2, MessageCircle, Plus,
+    ArrowLeft, Heart, Share2, Plus,
     CheckCircle, AlertTriangle, XCircle, ChevronRight,
-    Zap, Droplet, Activity, AlertCircle, Cookie, FlaskConical,
-    ShieldCheck, BarChart2, Leaf, Package,
+    FlaskConical, ShieldCheck,
 } from 'lucide-react-native';
 import { Colors, Spacing, Radius, Shadow } from '../theme';
-import { HealthConstraints } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Result'>;
-const { width } = Dimensions.get('window');
-const TABS = ['Overview', 'Nutrition', 'Ingredients', 'For You', 'Alternatives'] as const;
+const TABS = ['Overview', 'Nutrition', 'Ingredients', 'For You'] as const;
 type TabId = typeof TABS[number];
-
-const NUTRIENT_ICONS: Record<string, any> = {
-    energy: Zap, fat: Droplet, saturated_fat: Cookie, trans_fat: AlertTriangle,
-    sugars: Cookie, added_sugars: AlertCircle, proteins: Activity, fiber: Leaf,
-    sodium: AlertCircle, carbohydrates: Package,
-};
 
 const NUTRIENT_LABELS: Record<string, string> = {
     energy: 'Energy', fat: 'Total Fat', saturated_fat: 'Saturated Fat',
@@ -45,17 +37,17 @@ export default function ResultScreen({ route, navigation }: Props) {
     const [isFavState, setIsFavState] = useState(false);
     const [inPantryState, setInPantryState] = useState(false);
     const [constraints, setConstraints] = useState<HealthConstraints | null>(null);
-    const [addedModal, setAddedModal] = useState<string | null>(null); // message for brief toast
+    const [toast, setToast] = useState<string | null>(null);
     const [selectedAdditive, setSelectedAdditive] = useState<any>(null);
 
     const isBeauty = product.category === 'beauty';
     const primaryColor = isBeauty ? '#E91E63' : Colors.primary;
 
-    const baseRating = useMemo(() => isBeauty ? null : calculateNutriScore(product.nutrition), [product, isBeauty]);
+    const baseRating = useMemo(() => (isBeauty ? null : calculateNutriScore(product.nutrition)), [product, isBeauty]);
     const personalizedRating = useMemo(() => {
-        if (isBeauty || !constraints) return null;
+        if (isBeauty || !constraints || !baseRating?.hasData) return null;
         return calculatePersonalizedScore(product, constraints);
-    }, [product, constraints, isBeauty]);
+    }, [product, constraints, isBeauty, baseRating]);
     const forYouBullets = useMemo(() => {
         if (isBeauty || !constraints) return [];
         return generateForYouBullets(product, constraints);
@@ -63,47 +55,43 @@ export default function ResultScreen({ route, navigation }: Props) {
 
     const displayRating = personalizedRating || baseRating;
     const ingredients = product.ingredients || '';
-    const additives = useMemo(() => isBeauty ? [] : findAdditives(ingredients), [ingredients, isBeauty]);
-    const chemicals = useMemo(() => isBeauty ? findChemicals(ingredients) : [], [ingredients, isBeauty]);
-    const safetyScore = useMemo(() => isBeauty ? calculateSafetyScore(chemicals) : null, [chemicals, isBeauty]);
-    const alternatives = useMemo(() => getTopBySubCategory(product.category || 'food', 'All', 5).filter(a => a.barcode !== product.barcode).slice(0, 4), [product]);
-
+    const additives = useMemo(() => (isBeauty ? [] : findAdditives(ingredients)), [ingredients, isBeauty]);
+    const chemicals = useMemo(() => (isBeauty ? findChemicals(ingredients) : []), [ingredients, isBeauty]);
     const additiveSummary = useMemo(() => getAdditiveSummary(additives), [additives]);
-    const score0100 = personalizedRating ? personalizedRating.score : (baseRating?.hasData ? Math.max(0, Math.round(100 - (baseRating.score + 5) * 4)) : null);
-    const verdictText = score0100 !== null ? getVerdictText(score0100) : 'Checking…';
+
+    const score0100 = personalizedRating
+        ? personalizedRating.score
+        : (baseRating?.hasData ? nutriScoreToPercent(baseRating.score) : null);
+    const verdictText = score0100 !== null ? getVerdictText(score0100) : 'No nutrition data';
 
     useEffect(() => {
         checkFav(product.barcode).then(setIsFavState);
         isInPantry(product.barcode).then(setInPantryState);
         getHealthConstraints().then(setConstraints);
-        // Record scan streak + points
-        recordScanForStreak();
-        hasBadge('first_scan').then(has => { if (!has) { addPoints('first_scan'); awardBadge('first_scan'); } else { addPoints('scan'); } });
-        if (isBeauty) { hasBadge('clean_beauty_pioneer').then(has => { if (!has) awardBadge('clean_beauty_pioneer'); }); }
     }, [product.barcode]);
 
     const handleToggleFav = useCallback(async () => {
         const nowFav = await toggleFavorite({
             barcode: product.barcode, name: product.name, brand: product.brand,
             image_url: product.image_url, grade: displayRating?.grade || '?',
-            score: score0100 || 50, category: product.category || 'food',
+            score: score0100 ?? 50, category: product.category || 'food',
             subCategory: 'General', savedAt: Date.now(),
         });
         setIsFavState(nowFav);
-    }, [product, displayRating]);
+    }, [product, displayRating, score0100]);
 
     const handleAddToPantry = useCallback(async () => {
-        await addToPantry(product, score0100 || 50);
+        await addToPantry(product, score0100 ?? 50);
         setInPantryState(true);
-        setAddedModal('Added to pantry! 🧺');
-        setTimeout(() => setAddedModal(null), 2000);
+        setToast('Added to pantry 🧺');
+        setTimeout(() => setToast(null), 2000);
     }, [product, score0100]);
 
     const handleShare = useCallback(async () => {
         const grade = displayRating?.grade || '?';
         const bullets = forYouBullets.slice(0, 2).map(b => `${b.emoji} ${b.text}`).join('\n');
-        const msg = `I just scanned ${product.name} on Padho Label 🥗\n\nHealth Grade: ${grade} (${verdictText})\n\n${bullets}\n\nCheck it at padholabel.app`;
-        Share.share({ message: msg });
+        const msg = `I scanned ${product.name} on Padho Label 🥗\n\nHealth Grade: ${grade} (${verdictText})${bullets ? `\n\n${bullets}` : ''}`;
+        try { await Share.share({ message: msg }); } catch { /* user cancelled */ }
     }, [product, displayRating, forYouBullets, verdictText]);
 
     // ─── Tab: Overview ───────────────────────────────────────────────────────
@@ -118,8 +106,8 @@ export default function ResultScreen({ route, navigation }: Props) {
         if (sugar > 15) flags.push({ label: 'High Sugar', color: Colors.warning, icon: AlertTriangle });
         if (transFat > 0) flags.push({ label: 'Trans Fat!', color: Colors.danger, icon: XCircle });
         if (fiber > 5) flags.push({ label: 'Good Fiber', color: Colors.success, icon: CheckCircle });
-        if (transFat === 0) flags.push({ label: 'No Trans Fat', color: Colors.success, icon: CheckCircle });
-        if (satFat === 0 && sugar < 5) flags.push({ label: 'Clean Label', color: Colors.accent, icon: ShieldCheck });
+        if (transFat === 0 && baseRating?.hasData) flags.push({ label: 'No Trans Fat', color: Colors.success, icon: CheckCircle });
+        if (satFat === 0 && sugar < 5 && baseRating?.hasData) flags.push({ label: 'Clean Label', color: Colors.accent, icon: ShieldCheck });
         if (additives.some(a => a.level === 'high')) flags.push({ label: 'High-Risk Additives', color: Colors.danger, icon: FlaskConical });
 
         return (
@@ -133,32 +121,44 @@ export default function ResultScreen({ route, navigation }: Props) {
                     </View>
                     <View style={{ flex: 1 }}>
                         <Text style={[styles.verdictText, { color: displayRating?.color || Colors.textMuted }]}>{verdictText}</Text>
-                        {score0100 !== null && <Text style={styles.scoreSubtext}>Padho Score: {score0100}/100{constraints ? ' · Personalised for you 🎯' : ''}</Text>}
+                        {score0100 !== null && (
+                            <Text style={styles.scoreSubtext}>
+                                Padho Score: {score0100}/100{personalizedRating ? ' · Personalised for you 🎯' : ''}
+                            </Text>
+                        )}
                         {product.nova_group && <Text style={styles.novaText}>NOVA {product.nova_group} · {['Natural', 'Culinary', 'Processed', 'Ultra-processed'][product.nova_group - 1]}</Text>}
                     </View>
                 </View>
 
+                {!personalizedRating && !isBeauty && baseRating?.hasData && (
+                    <TouchableOpacity style={styles.personaliseHint} onPress={() => navigation.navigate('Profile')}>
+                        <Text style={styles.personaliseHintText}>Set up your health profile for a score personalised to you →</Text>
+                    </TouchableOpacity>
+                )}
+
                 {/* Quick flag chips */}
-                <View style={styles.flagsRow}>
-                    {flags.slice(0, 5).map((f, i) => {
-                        const Icon = f.icon;
-                        return (
-                            <View key={i} style={[styles.flagChip, { borderColor: f.color + '60', backgroundColor: f.color + '12' }]}>
-                                <Icon color={f.color} size={12} />
-                                <Text style={[styles.flagChipText, { color: f.color }]}>{f.label}</Text>
-                            </View>
-                        );
-                    })}
-                </View>
+                {flags.length > 0 && (
+                    <View style={styles.flagsRow}>
+                        {flags.slice(0, 5).map((f, i) => {
+                            const Icon = f.icon;
+                            return (
+                                <View key={i} style={[styles.flagChip, { borderColor: f.color + '60', backgroundColor: f.color + '12' }]}>
+                                    <Icon color={f.color} size={12} />
+                                    <Text style={[styles.flagChipText, { color: f.color }]}>{f.label}</Text>
+                                </View>
+                            );
+                        })}
+                    </View>
+                )}
 
                 {/* Additive summary */}
                 {!isBeauty && additives.length > 0 && (
                     <View style={styles.additiveSummaryCard}>
                         <FlaskConical color={Colors.textMuted} size={16} />
                         <Text style={styles.additiveSummaryText}>
-                            {additives.length} additive{additives.length > 1 ? 's' : ''} detected:
-                            {additiveSummary.high > 0 && <Text style={{ color: Colors.danger }}> {additiveSummary.high} high-risk</Text>}
-                            {additiveSummary.moderate > 0 && <Text style={{ color: Colors.warning }}>, {additiveSummary.moderate} moderate</Text>}
+                            {additives.length} additive{additives.length > 1 ? 's' : ''} detected
+                            {additiveSummary.high > 0 && <Text style={{ color: Colors.danger }}> · {additiveSummary.high} high-risk</Text>}
+                            {additiveSummary.moderate > 0 && <Text style={{ color: Colors.warning }}> · {additiveSummary.moderate} moderate</Text>}
                         </Text>
                         <TouchableOpacity onPress={() => setActiveTab('Ingredients')}>
                             <Text style={[styles.additiveSeeMore, { color: primaryColor }]}>View →</Text>
@@ -166,22 +166,33 @@ export default function ResultScreen({ route, navigation }: Props) {
                     </View>
                 )}
 
-                {/* CTA row */}
-                <View style={styles.ctaRow}>
-                    <TouchableOpacity style={[styles.ctaBtn, { borderColor: inPantryState ? Colors.accent : Colors.border }]} onPress={handleAddToPantry}>
-                        <Plus color={inPantryState ? Colors.accent : Colors.textMuted} size={18} />
-                        <Text style={[styles.ctaBtnText, inPantryState && { color: Colors.accent }]}>{inPantryState ? 'In Pantry' : 'Add to Pantry'}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.ctaBtn, { borderColor: Colors.info }]} onPress={() => setActiveTab('Alternatives')}>
-                        <BarChart2 color={Colors.info} size={18} />
-                        <Text style={[styles.ctaBtnText, { color: Colors.info }]}>Alternatives</Text>
-                    </TouchableOpacity>
-                </View>
+                {/* No-data prompt */}
+                {!isBeauty && !baseRating?.hasData && (
+                    <View style={styles.noDataCard}>
+                        <Text style={styles.noDataText}>Nutrition data isn't available for this product. Snap the label to fill it in.</Text>
+                        <TouchableOpacity
+                            style={[styles.ctaBtn, { borderColor: Colors.primary }]}
+                            onPress={() => navigation.navigate('IngredientsSnap', { product })}
+                        >
+                            <Text style={[styles.ctaBtnText, { color: Colors.primary }]}>📸 Scan the label</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                {/* CTA */}
+                <TouchableOpacity
+                    style={[styles.pantryBtn, { backgroundColor: inPantryState ? Colors.accent : primaryColor }]}
+                    onPress={handleAddToPantry}
+                    disabled={inPantryState}
+                >
+                    {inPantryState ? <CheckCircle color="#fff" size={18} /> : <Plus color="#fff" size={18} />}
+                    <Text style={styles.pantryBtnText}>{inPantryState ? 'In your pantry' : 'Add to Pantry'}</Text>
+                </TouchableOpacity>
             </ScrollView>
         );
     };
 
-    // ─── Tab: Nutrition Breakdown ─────────────────────────────────────────────
+    // ─── Tab: Nutrition ───────────────────────────────────────────────────────
     const renderNutrition = () => {
         if (!baseRating?.hasData) return <View style={styles.emptyState}><Text style={styles.emptyText}>Nutrition data not available for this product.</Text></View>;
         const serving = product.nutrition.serving_size_g;
@@ -193,16 +204,21 @@ export default function ResultScreen({ route, navigation }: Props) {
                         <Text style={[styles.nutritionHeaderCell, { flex: 2 }]}>Nutrient</Text>
                         <Text style={styles.nutritionHeaderCell}>Per 100g</Text>
                         {serving && <Text style={styles.nutritionHeaderCell}>Per serving</Text>}
-                        <Text style={styles.nutritionHeaderCell}>RDA%</Text>
+                        <Text style={styles.nutritionHeaderCell}>{constraints ? 'Your %' : 'RDA%'}</Text>
                     </View>
                     {Object.keys(NUTRIENT_LABELS).map(key => {
                         const data = baseRating.nutrients[key];
                         if (!data) return null;
                         const statusColor = data.status === 'positive' ? Colors.statusPositive : data.status === 'negative' ? Colors.statusNegative : data.status === 'low' ? Colors.statusLow : Colors.statusFair;
                         const perServing = serving ? ((data.value * serving) / 100).toFixed(1) : null;
-                        const personalizedPct = constraints ? (key === 'saturated_fat' ? Math.round((data.value / constraints.maxSatFatG) * 100) : key === 'sugars' ? Math.round((data.value / constraints.maxSugarsG) * 100) : key === 'sodium' ? Math.round((data.value / constraints.maxSodiumMg) * 100) : data.rdaPercentage) : data.rdaPercentage;
+                        const personalizedPct = constraints
+                            ? (key === 'saturated_fat' ? Math.round((data.value / constraints.maxSatFatG) * 100)
+                                : key === 'sugars' ? Math.round((data.value / constraints.maxSugarsG) * 100)
+                                    : key === 'sodium' ? Math.round((data.value / constraints.maxSodiumMg) * 100)
+                                        : data.rdaPercentage)
+                            : data.rdaPercentage;
                         return (
-                            <View key={key} style={[styles.nutritionRow, key === 'saturated_fat' || key === 'added_sugars' ? styles.nutritionRowIndented : undefined]}>
+                            <View key={key} style={[styles.nutritionRow, (key === 'saturated_fat' || key === 'added_sugars') ? styles.nutritionRowIndented : undefined]}>
                                 <Text style={[styles.nutritionCell, { flex: 2 }]} numberOfLines={1}>{NUTRIENT_LABELS[key]}</Text>
                                 <Text style={styles.nutritionCell}>{data.value.toFixed(1)}{data.unit}</Text>
                                 {serving && <Text style={styles.nutritionCell}>{perServing}{data.unit}</Text>}
@@ -218,7 +234,7 @@ export default function ResultScreen({ route, navigation }: Props) {
                 </View>
                 {constraints && <Text style={styles.servingNote}>% based on your personal daily limits</Text>}
                 <View style={styles.rdaLegend}>
-                    <Text style={styles.rdaLegendTitle}>Status legend:</Text>
+                    <Text style={styles.rdaLegendTitle}>Status:</Text>
                     {[['#1B5E20', 'Good'], ['#F57C00', 'Moderate'], ['#D32F2F', 'High/Low']].map(([c, l]) => (
                         <View key={l} style={styles.rdaLegendRow}>
                             <View style={[styles.rdaLegendDot, { backgroundColor: c }]} />
@@ -233,7 +249,6 @@ export default function ResultScreen({ route, navigation }: Props) {
     // ─── Tab: Ingredients & Additives ────────────────────────────────────────
     const renderIngredients = () => (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: Spacing.md, paddingBottom: 120, gap: 16 }}>
-            {/* Ingredients */}
             <View style={styles.card}>
                 <Text style={styles.cardTitle}>Ingredients</Text>
                 {ingredients ? (
@@ -241,7 +256,6 @@ export default function ResultScreen({ route, navigation }: Props) {
                 ) : <Text style={styles.emptyText}>Ingredients not available.</Text>}
             </View>
 
-            {/* Additives list */}
             {!isBeauty && (
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Additives ({additives.length})</Text>
@@ -266,13 +280,12 @@ export default function ResultScreen({ route, navigation }: Props) {
                 </View>
             )}
 
-            {/* Beauty chemicals */}
             {isBeauty && chemicals.length > 0 && (
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Chemicals of Concern</Text>
-                    {chemicals.map((chem: any, i: number) => (
+                    {chemicals.map((chem, i) => (
                         <View key={i} style={styles.additiveRow}>
-                            <View style={[styles.additiveDot, { backgroundColor: chem.level === 'high' ? Colors.danger : Colors.warning }]} />
+                            <View style={[styles.additiveDot, { backgroundColor: chem.level === 'high' ? Colors.danger : chem.level === 'moderate' ? Colors.warning : Colors.statusLow }]} />
                             <View style={{ flex: 1 }}>
                                 <Text style={styles.additiveName}>{chem.name}</Text>
                                 <Text style={styles.additiveFunction}>{chem.level.toUpperCase()} concern</Text>
@@ -290,7 +303,7 @@ export default function ResultScreen({ route, navigation }: Props) {
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: Spacing.md, gap: 12, paddingBottom: 120 }}>
             {!constraints ? (
                 <View style={styles.emptyState}>
-                    <Text style={styles.emptyText}>Complete your health profile to get personalised insights.</Text>
+                    <Text style={styles.emptyText}>Complete your health profile to get insights personalised to your goals and conditions.</Text>
                     <TouchableOpacity style={[styles.ctaBtn, { borderColor: Colors.primary, alignSelf: 'center', marginTop: 16 }]} onPress={() => navigation.navigate('Profile')}>
                         <Text style={[styles.ctaBtnText, { color: Colors.primary }]}>Set Up Profile →</Text>
                     </TouchableOpacity>
@@ -312,38 +325,11 @@ export default function ResultScreen({ route, navigation }: Props) {
         </ScrollView>
     );
 
-    // ─── Tab: Alternatives ────────────────────────────────────────────────────
-    const renderAlternatives = () => (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: Spacing.md, gap: 12, paddingBottom: 120 }}>
-            <Text style={styles.altTitle}>Better options in the same category</Text>
-            {alternatives.length === 0 ? (
-                <Text style={styles.emptyText}>No alternatives found yet.</Text>
-            ) : (
-                alternatives.map((alt, i) => (
-                    <View key={i} style={styles.altCard}>
-                        <Image source={{ uri: alt.image_url }} style={styles.altImage} />
-                        <View style={{ flex: 1, marginLeft: 12 }}>
-                            <Text style={styles.altName} numberOfLines={1}>{alt.name}</Text>
-                            <Text style={styles.altBrand}>{alt.brand}</Text>
-                            <View style={styles.altScoreRow}>
-                                <View style={[styles.altGradeDot, { backgroundColor: alt.score > 70 ? Colors.success : alt.score > 50 ? Colors.warning : Colors.danger }]}>
-                                    <Text style={styles.altGradeText}>{alt.grade}</Text>
-                                </View>
-                                <Text style={styles.altScore}>Score {alt.score}/100</Text>
-                            </View>
-                        </View>
-                    </View>
-                ))
-            )}
-        </ScrollView>
-    );
-
     const tabContent: Record<TabId, () => React.ReactNode> = {
         'Overview': renderOverview,
         'Nutrition': renderNutrition,
         'Ingredients': renderIngredients,
         'For You': renderForYou,
-        'Alternatives': renderAlternatives,
     };
 
     return (
@@ -372,17 +358,9 @@ export default function ResultScreen({ route, navigation }: Props) {
             <View style={styles.tabBar}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBarContent}>
                     {TABS.map(tab => (
-                        <TouchableOpacity
-                            key={tab}
-                            style={styles.tabItem}
-                            onPress={() => setActiveTab(tab)}
-                        >
+                        <TouchableOpacity key={tab} style={styles.tabItem} onPress={() => setActiveTab(tab)}>
                             <Text style={[styles.tabText, activeTab === tab && { color: primaryColor, fontWeight: '800' }]}>{tab}</Text>
-                            {activeTab === tab && (
-                                <Animated.View
-                                    style={[styles.tabIndicator, { backgroundColor: primaryColor }]}
-                                />
-                            )}
+                            {activeTab === tab && <View style={[styles.tabIndicator, { backgroundColor: primaryColor }]} />}
                         </TouchableOpacity>
                     ))}
                 </ScrollView>
@@ -393,21 +371,16 @@ export default function ResultScreen({ route, navigation }: Props) {
                 {tabContent[activeTab]()}
             </View>
 
-            {/* AI Chat FAB */}
-            <TouchableOpacity style={[styles.fab, { backgroundColor: primaryColor }]} onPress={() => navigation.navigate('Chat', { product })}>
-                <MessageCircle color="#fff" size={26} />
-            </TouchableOpacity>
-
             {/* Toast */}
-            {addedModal && (
+            {toast && (
                 <View style={styles.toast}>
-                    <Text style={styles.toastText}>{addedModal}</Text>
+                    <Text style={styles.toastText}>{toast}</Text>
                 </View>
             )}
 
             {/* Additive detail modal */}
             {selectedAdditive && (
-                <Modal visible transparent animationType="slide">
+                <Modal visible transparent animationType="slide" onRequestClose={() => setSelectedAdditive(null)}>
                     <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setSelectedAdditive(null)}>
                         <View style={styles.modalContent}>
                             <View style={styles.modalDragHandle} />
@@ -441,18 +414,21 @@ const styles = StyleSheet.create({
 
     tabBar: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: Colors.border, ...Shadow.sm },
     tabBarContent: { paddingHorizontal: Spacing.sm },
-    tabItem: { paddingHorizontal: 14, paddingVertical: 12, position: 'relative' },
-    tabText: { fontSize: 13, fontWeight: '600', color: Colors.textMuted },
-    tabIndicator: { position: 'absolute', bottom: 0, left: 14, right: 14, height: 2.5, borderRadius: 2 },
+    tabItem: { paddingHorizontal: 16, paddingVertical: 12, position: 'relative' },
+    tabText: { fontSize: 14, fontWeight: '600', color: Colors.textMuted },
+    tabIndicator: { position: 'absolute', bottom: 0, left: 16, right: 16, height: 2.5, borderRadius: 2 },
 
     // Overview
     scoreCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: Radius.xl, padding: Spacing.lg, gap: 16, alignItems: 'center', ...Shadow.md },
     scoreCircle: { width: 80, height: 80, borderRadius: 40, borderWidth: 5, alignItems: 'center', justifyContent: 'center' },
     scoreInner: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', ...Shadow.sm },
     scoreGrade: { color: '#fff', fontSize: 28, fontWeight: '900' },
-    verdictText: { fontSize: 16, fontWeight: '800', color: Colors.textPrimary },
+    verdictText: { fontSize: 16, fontWeight: '800' },
     scoreSubtext: { fontSize: 12, color: Colors.textMuted, marginTop: 4 },
     novaText: { fontSize: 11, color: Colors.textMuted, marginTop: 4 },
+
+    personaliseHint: { backgroundColor: Colors.primaryLight, borderRadius: Radius.md, padding: Spacing.md },
+    personaliseHintText: { fontSize: 13, color: Colors.primaryDark, fontWeight: '600' },
 
     flagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
     flagChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.full, borderWidth: 1 },
@@ -462,9 +438,14 @@ const styles = StyleSheet.create({
     additiveSummaryText: { flex: 1, fontSize: 13, color: Colors.textSecondary },
     additiveSeeMore: { fontSize: 13, fontWeight: '700' },
 
-    ctaRow: { flexDirection: 'row', gap: 10 },
-    ctaBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: Radius.md, borderWidth: 1.5, backgroundColor: '#fff' },
-    ctaBtnText: { fontSize: 13, fontWeight: '700', color: Colors.textSecondary },
+    noDataCard: { backgroundColor: '#fff', borderRadius: Radius.md, padding: Spacing.md, gap: 12, ...Shadow.sm },
+    noDataText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19 },
+
+    ctaBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, paddingHorizontal: 16, borderRadius: Radius.md, borderWidth: 1.5, backgroundColor: '#fff' },
+    ctaBtnText: { fontSize: 14, fontWeight: '700' },
+
+    pantryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: Radius.full, ...Shadow.sm },
+    pantryBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
 
     // Nutrition
     servingNote: { fontSize: 12, color: Colors.textMuted, marginBottom: 8, textAlign: 'center' },
@@ -503,22 +484,10 @@ const styles = StyleSheet.create({
     bulletEmoji: { fontSize: 20, lineHeight: 24 },
     bulletText: { flex: 1, fontSize: 14, color: Colors.textPrimary, lineHeight: 21 },
 
-    // Alternatives
-    altTitle: { fontSize: 15, fontWeight: '700', color: Colors.textMuted, marginBottom: 4 },
-    altCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: Radius.lg, padding: Spacing.md, ...Shadow.sm },
-    altImage: { width: 56, height: 56, borderRadius: Radius.md, backgroundColor: Colors.divider, resizeMode: 'contain' },
-    altName: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary },
-    altBrand: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-    altScoreRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
-    altGradeDot: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-    altGradeText: { color: '#fff', fontSize: 11, fontWeight: '900' },
-    altScore: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
-
     // Misc
     emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xl, marginTop: 60 },
     emptyText: { color: Colors.textMuted, fontSize: 14, textAlign: 'center', lineHeight: 20 },
-    fab: { position: 'absolute', right: 20, bottom: 30, width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', ...Shadow.lg },
-    toast: { position: 'absolute', bottom: 100, alignSelf: 'center', backgroundColor: '#222', borderRadius: Radius.full, paddingHorizontal: 20, paddingVertical: 10 },
+    toast: { position: 'absolute', bottom: 40, alignSelf: 'center', backgroundColor: '#222', borderRadius: Radius.full, paddingHorizontal: 20, paddingVertical: 10 },
     toastText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 
     // Additive modal

@@ -131,6 +131,13 @@ export const calculateNutriScore = (nutrition: NutritionData): EnhancedRatingRes
     return { score, grade, color, hasData: true, nutrients };
 };
 
+/**
+ * Map a raw Nutri-Score (lower = better, roughly -15…+40) to a 0–100 scale
+ * (higher = better), clamped. Used when no personalised score is available.
+ */
+export const nutriScoreToPercent = (score: number): number =>
+    Math.max(0, Math.min(100, Math.round(100 - (score + 5) * 4)));
+
 // ─── Category Thresholds ──────────────────────────────────────────────────────
 
 type CategoryThresholds = {
@@ -177,7 +184,9 @@ export const calculatePersonalizedScore = (
     constraints: HealthConstraints,
 ): { score: number; grade: 'A' | 'B' | 'C' | 'D' | 'E'; color: string } => {
     const n = product.nutrition;
-    const thresholds = getCategoryThresholds(product.category || product.subCategory);
+    // Prefer the specific sub-category (e.g. "biscuits") over the broad
+    // "food"/"beauty" so category-tuned thresholds actually kick in.
+    const thresholds = getCategoryThresholds(product.subCategory || product.category);
 
     let penalty = 0;
     let bonus = 0;

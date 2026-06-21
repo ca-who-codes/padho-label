@@ -1,13 +1,13 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     TextInput, ScrollView, Animated, Dimensions, Alert,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, UserProfile, DietType, HealthGoal, HealthCondition, AllergyType, ActivityLevel } from '../types';
-import { saveUserProfile, markOnboardingDone, DEFAULT_PREFERENCES } from '../services/userProfileService';
+import { saveUserProfile, markOnboardingDone, DEFAULT_PREFERENCES, getUserProfile } from '../services/userProfileService';
 import { Colors, Spacing, Radius, Shadow } from '../theme';
-import { ChevronRight, ChevronLeft, Check, User, Heart, Apple, Leaf, AlertTriangle } from 'lucide-react-native';
+import { ChevronRight, ChevronLeft, Check } from 'lucide-react-native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
 const { width } = Dimensions.get('window');
@@ -65,6 +65,8 @@ const ALLERGY_OPTIONS: { label: string; value: AllergyType; emoji: string }[] = 
 export default function OnboardingScreen({ navigation }: Props) {
     const [step, setStep] = useState(0);
     const slideAnim = useRef(new Animated.Value(0)).current;
+    // Identity of an existing profile, preserved across edits.
+    const existing = useRef<{ id: string; version: number; createdAt: number } | null>(null);
 
     // Step 1 — About you
     const [name, setName] = useState('');
@@ -87,6 +89,27 @@ export default function OnboardingScreen({ navigation }: Props) {
     // Step 4 — Allergies & Preferences
     const [allergies, setAllergies] = useState<AllergyType[]>([]);
 
+    // Pre-fill from an existing profile so "Edit" is non-destructive.
+    useEffect(() => {
+        getUserProfile().then(p => {
+            if (!p) return;
+            existing.current = { id: p.id, version: p.version, createdAt: p.createdAt };
+            setName(p.name === 'Friend' ? '' : p.name);
+            setAge(p.age ? String(p.age) : '');
+            setSex(p.sex);
+            setHeightCm(p.heightCm ? String(p.heightCm) : '');
+            setWeightKg(p.weightKg ? String(p.weightKg) : '');
+            setCity(p.city === 'India' ? '' : p.city);
+            setDiet(p.diet);
+            setActivityLevel(p.activityLevel);
+            setSmoker(p.smoker);
+            setAlcohol(p.alcohol);
+            setGoals(p.goals.length ? p.goals : ['wellness']);
+            setConditions(p.conditions);
+            setAllergies(p.allergies);
+        });
+    }, []);
+
     const animateTo = (next: number) => {
         Animated.timing(slideAnim, { toValue: -next * width, duration: 300, useNativeDriver: true }).start();
         setStep(next);
@@ -105,8 +128,8 @@ export default function OnboardingScreen({ navigation }: Props) {
 
     const handleFinish = async () => {
         const profile: UserProfile = {
-            id: `user_${Date.now()}`,
-            version: 0,
+            id: existing.current?.id || `user_${Date.now()}`,
+            version: existing.current?.version ?? 0,
             name: name.trim() || 'Friend',
             age: parseInt(age) || 25,
             sex,
@@ -122,7 +145,7 @@ export default function OnboardingScreen({ navigation }: Props) {
             conditions,
             allergies,
             preferences: { ...DEFAULT_PREFERENCES },
-            createdAt: Date.now(),
+            createdAt: existing.current?.createdAt || Date.now(),
             updatedAt: Date.now(),
         };
         await saveUserProfile(profile);
