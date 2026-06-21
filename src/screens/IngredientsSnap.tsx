@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-    ScrollView,
+    ScrollView, TextInput,
 } from 'react-native';
 import {
     Camera,
@@ -10,7 +10,7 @@ import {
 } from 'react-native-vision-camera';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, NutritionData } from '../types';
-import { updateProductInHistory } from '../services/history';
+import { updateProductInHistory, saveToHistory } from '../services/history';
 import { runOCROnImage, parseNutritionFromText, mergeNutrition } from '../services/ocrNutrition';
 import { calculateNutriScore } from '../services/ratingEngine';
 import { Camera as CameraIcon, CheckCircle, XCircle, RefreshCw, Zap } from 'lucide-react-native';
@@ -35,6 +35,30 @@ const FIELD_LABELS: Record<keyof NutritionData, string> = {
     serving_size_g: 'Serving Size (g)',
 };
 
+const NUTRITION_KEYS = Object.keys(FIELD_LABELS) as (keyof NutritionData)[];
+
+/** Parse the string draft fields back into numeric NutritionData. */
+const draftsToNutrition = (drafts: Record<string, string>): NutritionData => {
+    const n: NutritionData = {};
+    for (const key of NUTRITION_KEYS) {
+        const raw = drafts[key];
+        if (raw == null || raw.trim() === '') continue;
+        const num = parseFloat(raw.replace(',', '.'));
+        if (!isNaN(num)) (n as any)[key] = num;
+    }
+    return n;
+};
+
+/** Seed editable string drafts from a NutritionData object. */
+const nutritionToDrafts = (n: NutritionData): Record<string, string> => {
+    const d: Record<string, string> = {};
+    for (const key of NUTRITION_KEYS) {
+        const v = n[key];
+        d[key] = v != null ? String(v) : '';
+    }
+    return d;
+};
+
 export default function IngredientsSnap({ route, navigation }: Props) {
     const { product } = route.params;
     const cameraRef = useRef<Camera>(null);
@@ -45,7 +69,8 @@ export default function IngredientsSnap({ route, navigation }: Props) {
     const [statusMsg, setStatusMsg] = useState('');
     const [imageUri, setImageUri] = useState<string | null>(null);
     const [extractedNutrition, setExtractedNutrition] = useState<Partial<NutritionData>>({});
-    const [mergedNutrition, setMergedNutrition] = useState<NutritionData>(product.nutrition || {});
+    // Editable string drafts are the source of truth on the review screen.
+    const [drafts, setDrafts] = useState<Record<string, string>>(() => nutritionToDrafts(product.nutrition || {}));
 
     const handleCapture = async () => {
         if (!cameraRef.current || stage !== 'camera') return;
@@ -72,7 +97,7 @@ export default function IngredientsSnap({ route, navigation }: Props) {
             const merged = mergeNutrition(product.nutrition, ocrExtracted);
 
             setExtractedNutrition(ocrExtracted);
-            setMergedNutrition(merged);
+            setDrafts(nutritionToDrafts(merged));
 
             await updateProductInHistory(product.barcode, {
                 ingredientsImageUri: uri,
@@ -87,21 +112,22 @@ export default function IngredientsSnap({ route, navigation }: Props) {
         }
     };
 
-    const handleApply = () => {
-        navigation.navigate('Result', {
-            product: {
-                ...product,
-                ingredientsImageUri: imageUri ?? undefined,
-                nutrition: mergedNutrition,
-            },
-        });
+    const handleApply = async () => {
+        const updated = {
+            ...product,
+            ingredientsImageUri: imageUri ?? undefined,
+            nutrition: draftsToNutrition(drafts),
+        };
+        // Persist so the (often DB-less) product shows up in history/recents.
+        await saveToHistory(updated);
+        navigation.navigate('Result', { product: updated });
     };
 
     const handleRetry = () => {
         setStage('camera');
         setStatusMsg('');
         setExtractedNutrition({});
-        setMergedNutrition(product.nutrition);
+        setDrafts(nutritionToDrafts(product.nutrition || {}));
         setImageUri(null);
     };
 
@@ -140,7 +166,8 @@ export default function IngredientsSnap({ route, navigation }: Props) {
 
     // ── REVIEW ──────────────────────────────────────────────────────────────
     if (stage === 'review') {
-        const newRating = calculateNutriScore(mergedNutrition);
+        const currentNutrition = draftsToNutrition(drafts);
+        const newRating = calculateNutriScore(currentNutrition);
         const prevRating = calculateNutriScore(product.nutrition);
         const foundCount = Object.keys(extractedNutrition).length;
 
@@ -154,13 +181,11 @@ export default function IngredientsSnap({ route, navigation }: Props) {
                     <View style={{ flex: 1, marginLeft: Spacing.sm }}>
                         <Text style={styles.resultBannerTitle}>
                             {foundCount > 0
-                                ? `Found ${foundCount} nutrition value${foundCount !== 1 ? 's' : ''}`
-                                : 'No values extracted — label may be unclear'}
+                                ? `Found ${foundCount} value${foundCount !== 1 ? 's' : ''} — review & edit`
+                                : 'Nothing detected — type the values in'}
                         </Text>
                         <Text style={styles.resultBannerSub}>
-                            {foundCount > 0
-                                ? 'Review below and tap Apply to update the grade'
-                                : 'Photo saved. You can reshoot for a clearer image.'}
+                            Tap any field to add or correct a value. The grade updates live.
                         </Text>
                     </View>
                 </View>
@@ -177,7 +202,7 @@ export default function IngredientsSnap({ route, navigation }: Props) {
                         </View>
                         <Text style={styles.gradeArrow}>→</Text>
                         <View style={styles.gradeBox}>
-                            <Text style={styles.gradeBoxLabel}>AFTER OCR</Text>
+                            <Text style={styles.gradeBoxLabel}>UPDATED</Text>
                             <View style={[styles.gradeBadge, { backgroundColor: newRating.color }]}>
                                 <Text style={styles.gradeBadgeText}>{newRating.grade}</Text>
                             </View>
@@ -186,23 +211,32 @@ export default function IngredientsSnap({ route, navigation }: Props) {
                 )}
 
                 <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Extracted Values</Text>
-                    {(Object.keys(FIELD_LABELS) as (keyof NutritionData)[]).map(key => {
+                    <Text style={styles.cardTitle}>Review &amp; Edit Values</Text>
+                    {NUTRITION_KEYS.map(key => {
                         const isNew = extractedNutrition[key] != null && product.nutrition[key] == null;
-                        const finalVal = mergedNutrition[key];
+                        const empty = !drafts[key];
                         return (
                             <View key={key} style={[styles.tableRow, isNew && styles.tableRowHighlight]}>
                                 <View style={styles.rowLeft}>
                                     <Text style={styles.rowLabel}>{FIELD_LABELS[key]}</Text>
                                     {isNew && (
                                         <View style={styles.newBadge}>
-                                            <Text style={styles.newBadgeText}>NEW</Text>
+                                            <Text style={styles.newBadgeText}>OCR</Text>
                                         </View>
                                     )}
                                 </View>
-                                <Text style={[styles.rowValue, finalVal == null && styles.rowValueMuted]}>
-                                    {finalVal != null ? String(finalVal) : '—'}
-                                </Text>
+                                <TextInput
+                                    style={[styles.rowInput, empty && styles.rowInputMuted]}
+                                    value={drafts[key] ?? ''}
+                                    onChangeText={(text) =>
+                                        setDrafts(prev => ({ ...prev, [key]: text.replace(/[^0-9.,]/g, '') }))
+                                    }
+                                    keyboardType="decimal-pad"
+                                    placeholder="—"
+                                    placeholderTextColor={Colors.textMuted}
+                                    maxLength={8}
+                                    returnKeyType="done"
+                                />
                             </View>
                         );
                     })}
@@ -210,7 +244,7 @@ export default function IngredientsSnap({ route, navigation }: Props) {
 
                 <TouchableOpacity style={styles.applyButton} onPress={handleApply}>
                     <CheckCircle color="#fff" size={20} />
-                    <Text style={styles.applyButtonText}>Apply & View Updated Results</Text>
+                    <Text style={styles.applyButtonText}>Apply &amp; View Results</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.reshootButton} onPress={handleRetry}>
                     <RefreshCw color={Colors.primary} size={16} />
@@ -303,8 +337,13 @@ const styles = StyleSheet.create({
     rowLabel: { fontSize: 13, color: Colors.textSecondary },
     newBadge: { backgroundColor: Colors.gradeA, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 },
     newBadgeText: { fontSize: 9, color: '#fff', fontWeight: '800' },
-    rowValue: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary },
-    rowValueMuted: { color: Colors.textMuted, fontWeight: '400' },
+    rowInput: {
+        fontSize: 15, fontWeight: '700', color: Colors.textPrimary,
+        textAlign: 'right', minWidth: 72, paddingVertical: 4, paddingHorizontal: 8,
+        borderRadius: Radius.sm, backgroundColor: Colors.background,
+        borderWidth: 1, borderColor: Colors.border,
+    },
+    rowInputMuted: { color: Colors.textMuted, fontWeight: '400' },
     applyButton: { backgroundColor: Colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.md, borderRadius: Radius.full, ...Shadow.md, marginBottom: Spacing.sm },
     applyButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
     reshootButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.md },

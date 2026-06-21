@@ -100,6 +100,21 @@ eas credentials --platform android
 
 ---
 
-## Phase 2 (Optional): Full EAS removal
+## Optional: OCR secret
 
-When ready, I can migrate `expo-camera` → `react-native-vision-camera` and run `expo prebuild` to generate the native `android/` folder. This removes Expo entirely from the build pipeline and gives you pure Gradle builds with no EAS dependency at all.
+The "scan the ingredients label" fallback uses the free [OCR.space](https://ocr.space/ocrapi)
+API. To bake your own key into release builds (instead of the rate-limited demo key), add a
+GitHub Actions secret:
+
+- Name: `EXPO_PUBLIC_OCRSPACE_API_KEY`
+- Value: your free key from [ocr.space/ocrapi](https://ocr.space/ocrapi)
+
+This is optional — barcode scanning works without it.
+
+## Notes
+
+- The app is **offline-first**: there is no login or backend. All user data (profile,
+  history, pantry, favourites) lives on the device. There are no Supabase or Gemini
+  credentials to manage anymore.
+- Barcode scanning and label capture use `react-native-vision-camera`, so builds go through
+  `expo prebuild` → Gradle (no Expo Go).

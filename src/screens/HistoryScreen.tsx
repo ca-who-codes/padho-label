@@ -3,7 +3,7 @@ import {
     View, Text, StyleSheet, FlatList,
     TouchableOpacity, Image, TextInput,
 } from 'react-native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { RootStackParamList, Product } from '../types';
 import { getHistory } from '../services/history';
 import { calculateNutriScore } from '../services/ratingEngine';
@@ -11,7 +11,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { Search, ScanLine } from 'lucide-react-native';
 import { Colors, Spacing, Radius, Shadow, Typography } from '../theme';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'History'>;
+type Props = BottomTabScreenProps<RootStackParamList, 'History'>;
 
 export default function HistoryScreen({ navigation }: Props) {
     const [history, setHistory] = useState<Product[]>([]);

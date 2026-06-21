@@ -98,4 +98,17 @@ export const Shadow = {
     },
 };
 
-export const APP_VERSION = '2.0.0';
+// ─── Grade → colour ────────────────────────────────────────────────────────
+export const GRADE_COLORS: Record<string, string> = {
+    A: Colors.gradeA,
+    B: Colors.gradeB,
+    C: Colors.gradeC,
+    D: Colors.gradeD,
+    E: Colors.gradeE,
+};
+
+/** Map a letter grade (A–E) to its colour, with a neutral fallback. */
+export const gradeColor = (grade?: string | null): string =>
+    (grade && GRADE_COLORS[grade]) || Colors.textMuted;
+
+export const APP_VERSION = '4.0.0';

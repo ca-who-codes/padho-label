@@ -3,25 +3,25 @@ import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
     FlatList, Image, Animated,
 } from 'react-native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList, PantryItem } from '../types';
 import { getPantryItems, computePantryScore, getPantryGrade, getGradeColor, getSwapCandidates, removeFromPantry } from '../services/pantryService';
 import { Colors, Spacing, Radius, Shadow } from '../theme';
-import { Package, TrendingUp, Trash2, Camera, BarChart2 } from 'lucide-react-native';
+import { Package, TrendingUp, Trash2, Camera } from 'lucide-react-native';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Pantry'>;
+type Props = BottomTabScreenProps<RootStackParamList, 'Pantry'>;
 
 export default function PantryScreen({ navigation }: Props) {
     const [items, setItems] = useState<PantryItem[]>([]);
-    const [loading, setLoading] = useState(true);
+    const isFocused = useIsFocused();
 
     const load = useCallback(async () => {
         const data = await getPantryItems();
         setItems(data);
-        setLoading(false);
     }, []);
 
-    useEffect(() => { load(); }, [load]);
+    useEffect(() => { if (isFocused) load(); }, [isFocused, load]);
 
     const handleRemove = async (productId: string) => {
         const updated = await removeFromPantry(productId);

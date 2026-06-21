@@ -9,14 +9,15 @@ import {
     useCameraPermission,
     useCodeScanner,
 } from 'react-native-vision-camera';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList } from '../types';
 import { getProductByBarcode } from '../services/api';
 import { saveToHistory } from '../services/history';
 import { XCircle, RefreshCw, Hash } from 'lucide-react-native';
 import { Colors, Spacing, Radius } from '../theme';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Scan'>;
+type Props = BottomTabScreenProps<RootStackParamList, 'Scan'>;
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = [0, 1000, 2500];
@@ -27,6 +28,7 @@ type ErrType = 'timeout' | 'notfound' | 'generic';
 export default function ScanScreen({ navigation }: Props) {
     const { hasPermission, requestPermission } = useCameraPermission();
     const device = useCameraDevice('back');
+    const isFocused = useIsFocused();
 
     const [active, setActive] = useState(true);
     const [loading, setLoading] = useState(false);
@@ -48,6 +50,19 @@ export default function ScanScreen({ navigation }: Props) {
         loop.start();
         return () => loop.stop();
     }, []);
+
+    // Re-arm the scanner each time the tab regains focus (e.g. after viewing a
+    // result and coming back), so the camera never stays frozen.
+    useEffect(() => {
+        if (isFocused) {
+            setActive(true);
+            setLoading(false);
+            setErrorMsg(null);
+            setErrorType(null);
+            setShowManualEntry(false);
+            lastBarcode.current = null;
+        }
+    }, [isFocused]);
 
     const fetchWithRetry = async (barcode: string) => {
         let lastError: Error | null = null;
@@ -192,7 +207,7 @@ export default function ScanScreen({ navigation }: Props) {
             <Camera
                 style={StyleSheet.absoluteFill}
                 device={device}
-                isActive={active && !loading}
+                isActive={active && isFocused && !loading}
                 codeScanner={codeScanner}
             />
 

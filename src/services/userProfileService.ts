@@ -92,12 +92,19 @@ export const markOnboardingDone = async (): Promise<void> => {
  * Condition overrides tighten specific limits.
  */
 export const computeHealthConstraints = (profile: UserProfile): HealthConstraints => {
+    // Clamp inputs to sane ranges so a stray/empty value never yields NaN limits.
+    const clamp = (v: number, min: number, max: number, fallback: number) =>
+        Number.isFinite(v) && v > 0 ? Math.min(Math.max(v, min), max) : fallback;
+    const weightKg = clamp(profile.weightKg, 25, 250, 65);
+    const heightCm = clamp(profile.heightCm, 100, 230, 165);
+    const age = clamp(profile.age, 5, 100, 25);
+
     // BMR (Mifflin-St Jeor)
     let bmr: number;
     if (profile.sex === 'M') {
-        bmr = 10 * profile.weightKg + 6.25 * profile.heightCm - 5 * profile.age + 5;
+        bmr = 10 * weightKg + 6.25 * heightCm - 5 * age + 5;
     } else {
-        bmr = 10 * profile.weightKg + 6.25 * profile.heightCm - 5 * profile.age - 161;
+        bmr = 10 * weightKg + 6.25 * heightCm - 5 * age - 161;
     }
 
     const activityFactors: Record<ActivityLevel, number> = {
@@ -115,7 +122,7 @@ export const computeHealthConstraints = (profile: UserProfile): HealthConstraint
     let maxSatFatG = 20;
     let maxSodiumMg = 2400;
     let minFiberG = 30;
-    let minProteinG = Math.round(profile.weightKg * 0.8); // 0.8g per kg
+    let minProteinG = Math.round(weightKg * 0.8); // 0.8g per kg
 
     // Condition overrides
     const hasDiabetes = profile.conditions.includes('diabetes') || profile.conditions.includes('prediabetes');
@@ -138,7 +145,7 @@ export const computeHealthConstraints = (profile: UserProfile): HealthConstraint
 
     // Goal overrides
     if (profile.goals.includes('muscle_gain')) {
-        minProteinG = Math.round(profile.weightKg * 1.6);
+        minProteinG = Math.round(weightKg * 1.6);
     }
     if (profile.goals.includes('weight_loss')) {
         maxAddedSugarsG = Math.min(maxAddedSugarsG, 20);

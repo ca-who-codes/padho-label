@@ -16,22 +16,6 @@ export type NutritionData = {
     serving_size_g?: number;
 };
 
-export type IngredientFlag =
-    | 'added_sugar'
-    | 'refined_oil'
-    | 'palm_oil'
-    | 'allergen'
-    | 'whole_grain'
-    | 'artificial_color'
-    | 'preservative'
-    | 'refined_flour';
-
-export type ParsedIngredient = {
-    name: string;
-    rank: number; // position in ingredient list (1-indexed)
-    flags: IngredientFlag[];
-};
-
 export type Product = {
     barcode: string;
     name: string;
@@ -42,14 +26,11 @@ export type Product = {
     nutriscore_grade?: string;
     nova_group?: number;
     ingredients?: string;
-    ingredientsParsed?: ParsedIngredient[];
     ingredientsImageUri?: string;
     scannedAt?: number; // timestamp
     category?: 'food' | 'beauty';
     subCategory?: string;
     allergens?: string;
-    isVeg?: boolean;
-    baseScore?: number; // 0–100
 };
 
 // ─── User Profile ──────────────────────────────────────────────────────────────
@@ -125,21 +106,6 @@ export type HealthConstraints = {
     goalFlags: Record<HealthGoal, boolean>;
 };
 
-// ─── Scan & History ────────────────────────────────────────────────────────────
-
-export type ScanAction = 'dismissed' | 'saved' | 'compared' | 'added_to_pantry' | 'shared';
-
-export type ScanEvent = {
-    id: string;
-    productId: string; // barcode
-    timestamp: number;
-    locationCity?: string;
-    storeName?: string;
-    verdict: 'great' | 'okay' | 'avoid';
-    personalizedScore: number; // 0–100
-    action?: ScanAction;
-};
-
 // ─── Pantry ────────────────────────────────────────────────────────────────────
 
 export type PantryItem = {
@@ -156,52 +122,9 @@ export type PantryItem = {
     purchasedFrom?: string;
 };
 
-// ─── Points & Badges ──────────────────────────────────────────────────────────
-
-export type PointReason = 'scan' | 'contribution' | 'streak' | 'challenge' | 'review' | 'referral' | 'first_scan';
-
-export type PointEvent = {
-    id: string;
-    delta: number;
-    reason: PointReason;
-    refId?: string; // scan barcode or challenge id
-    timestamp: number;
-};
-
-export type BadgeId =
-    | 'label_ninja'
-    | 'sugar_smart'
-    | 'pantry_champion'
-    | 'explorer'
-    | 'clean_beauty_pioneer'
-    | 'hydration_hero'
-    | 'first_scan';
-
-export type Badge = {
-    id: BadgeId;
-    name: string;
-    description: string;
-    emoji: string;
-    earnedAt?: number;
-};
-
-// ─── AI Assistants ────────────────────────────────────────────────────────────
-
-export type AIAssistantId = 'claude' | 'zomato' | 'zepto';
-
-export type AIAssistantMeta = {
-    id: AIAssistantId;
-    name: string;
-    tagline: string;
-    description: string;
-    color: string;
-    features: string[];
-};
-
 // ─── Navigation ────────────────────────────────────────────────────────────────
 
 export type RootStackParamList = {
-    Auth: undefined;
     Onboarding: undefined;
     MainTabs: undefined;
     Home: undefined;
@@ -210,10 +133,6 @@ export type RootStackParamList = {
     History: undefined;
     Settings: undefined;
     IngredientsSnap: { product: Product };
-    Chat: { product?: Product };
-    Leaderboard: { category?: 'food' | 'beauty'; subCategory?: string } | undefined;
     Pantry: undefined;
-    Challenges: undefined;
     Profile: undefined;
-    AIAssistants: undefined;
 };
