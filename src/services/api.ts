@@ -23,6 +23,12 @@ const FIELDS = [
     'allergens_from_ingredients',
 ].join(',');
 
+// Open Food Facts asks every client to send a descriptive User-Agent (app + contact);
+// generic/empty UAs get rate-limited or 503'd. Keep this non-personal.
+const OFF_HEADERS = {
+    'User-Agent': 'PadhoLabel/4.0 (+https://github.com/subhamlistingsmanager/padho-label)',
+};
+
 /**
  * Map Open Food Facts `categories_tags` (e.g. ["en:biscuits","en:sugary-snacks"])
  * to a scoring sub-category the rating engine has tuned thresholds for. Ordered
@@ -66,6 +72,7 @@ const performLookup = async (url: string, withFields: boolean): Promise<LookupRe
     try {
         const response = await axios.get(url, {
             params: withFields ? { fields: FIELDS } : undefined,
+            headers: OFF_HEADERS,
             timeout: 8000,
         });
         if (response.data?.status === 0 || !response.data?.product) {
@@ -89,6 +96,7 @@ export const searchProducts = async (query: string, limit = 20): Promise<Product
                 page_size: limit,
                 fields: FIELDS,
             },
+            headers: OFF_HEADERS,
             timeout: 8000,
         });
 

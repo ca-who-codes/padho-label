@@ -9,6 +9,7 @@ import { Home, Camera, Package, User, Clock } from 'lucide-react-native';
 import HomeScanScreen from './src/screens/HomeScanScreen';
 import ScanScreen from './src/screens/ScanScreen';
 import ResultScreen from './src/screens/ResultScreen';
+import CompareScreen from './src/screens/CompareScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import IngredientsSnap from './src/screens/IngredientsSnap';
@@ -133,6 +134,7 @@ export default function App() {
                 <Stack.Screen name="MainTabs" component={MainTabs} />
                 {/* Detail / modal screens */}
                 <Stack.Screen name="Result" component={ResultScreen} />
+                <Stack.Screen name="Compare" component={CompareScreen} />
                 <Stack.Screen
                     name="IngredientsSnap"
                     component={IngredientsSnap}

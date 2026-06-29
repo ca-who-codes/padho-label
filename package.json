@@ -9,6 +9,8 @@
     "web": "expo start --web",
     "prebuild": "expo prebuild --clean",
     "build:android": "cd android && ./gradlew bundleRelease",
+    "build:catalog": "node scripts/build-catalog.mjs",
+    "promote": "node scripts/promote-contributions.mjs",
     "test": "jest"
   },
   "jest": {

@@ -39,6 +39,13 @@ No account. No tracking. All your data lives on your device.
 
   The curated catalog is read-only and opt-in (see env below); with no token set the app
   is a plain OFF + OCR scanner. The analysis engine is identical regardless of source.
+- **Self-healing intelligence** (`src/services/intelligence/`): a local-first resolution
+  waterfall (barcode → brand+name+qty → same-product line → fuzzy) over a bundled seed
+  catalog plus a learned cache. Any product resolved via Open Food Facts or OCR is written
+  back, so the slow path never runs twice on a device, and queued to grow the shared
+  catalog. It powers the **Compare** screen — ranks options for *your* profile, leading
+  with the axis that matters (sugar for diabetes, sodium for hypertension…).
+  See [docs/INTELLIGENCE.md](docs/INTELLIGENCE.md) and [USER_GUIDE.md](USER_GUIDE.md).
 - **Scoring engine** (`src/services/ratingEngine.ts`): a transparent Nutri-Score base plus a
   personalised 0–100 score derived from `HealthConstraints` computed from the user profile.
 - **OCR** (`src/services/ocrNutrition.ts`): image → text via OCR.space, then a regex parser.
@@ -77,7 +84,9 @@ All variables are **optional** — with none set, the app is a fully working OFF
 
 - `npm start` — Expo dev server
 - `npm run android` / `npm run ios`
-- `npm test` — Jest unit tests (scoring, OCR parsing, additive detection)
+- `npm test` — Jest unit tests (scoring, OCR parsing, additive detection, intelligence)
+- `npm run build:catalog` — regenerate the bundled catalog from `scripts/sources/*.json`
+- `npm run promote <file>` — fold an exported contribution queue into the catalog source
 - `npm run android` build pipeline & Play Store submission: see [SETUP.md](SETUP.md)
 
 ## Quality
@@ -92,3 +101,6 @@ npm test           # 18 tests, all green
 Padho Label is an informational tool, **not medical advice**. Always consult a qualified
 professional for dietary decisions. Nutrition data is community-sourced from Open Food Facts
 and may be incomplete or out of date.
+
+*Contains information from [Open Food Facts](https://world.openfoodfacts.org/), made
+available under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/).*

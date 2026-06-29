@@ -12,6 +12,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, NutritionData } from '../types';
 import { updateProductInHistory, saveToHistory } from '../services/history';
 import { runOCROnImage, parseNutritionFromText, mergeNutrition } from '../services/ocrNutrition';
+import { rememberProduct } from '../services/intelligence';
 import { calculateNutriScore } from '../services/ratingEngine';
 import { Camera as CameraIcon, CheckCircle, XCircle, RefreshCw, Zap } from 'lucide-react-native';
 import { Colors, Spacing, Radius, Shadow } from '../theme';
@@ -120,6 +121,9 @@ export default function IngredientsSnap({ route, navigation }: Props) {
         };
         // Persist so the (often DB-less) product shows up in history/recents.
         await saveToHistory(updated);
+        // Self-heal: an OCR'd product becomes permanent intelligence, so the next
+        // scan of it is an instant hit and it can grow the shared catalog.
+        await rememberProduct(updated, 'ocr');
         navigation.navigate('Result', { product: updated });
     };
 

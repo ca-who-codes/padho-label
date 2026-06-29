@@ -130,6 +130,7 @@ export type RootStackParamList = {
     Home: undefined;
     Scan: undefined;
     Result: { product: Product };
+    Compare: { product: Product };
     History: undefined;
     Settings: undefined;
     IngredientsSnap: { product: Product };

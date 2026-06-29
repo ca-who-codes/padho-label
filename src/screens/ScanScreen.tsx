@@ -12,7 +12,7 @@ import {
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList } from '../types';
-import { getProductByBarcode } from '../services/api';
+import { resolveByBarcode } from '../services/intelligence';
 import { saveToHistory } from '../services/history';
 import { XCircle, RefreshCw, Hash } from 'lucide-react-native';
 import { Colors, Spacing, Radius } from '../theme';
@@ -73,7 +73,7 @@ export default function ScanScreen({ navigation }: Props) {
                 await sleep(RETRY_DELAY_MS[i] ?? 2500);
             }
             try {
-                const product = await getProductByBarcode(barcode);
+                const product = await resolveByBarcode(barcode);
                 return { product, error: null };
             } catch (err: any) {
                 lastError = err;

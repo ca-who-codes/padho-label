@@ -179,6 +179,16 @@ export default function ResultScreen({ route, navigation }: Props) {
                     </View>
                 )}
 
+                {/* Compare — the decide surface */}
+                {!isBeauty && (
+                    <TouchableOpacity
+                        style={[styles.ctaBtn, { borderColor: primaryColor, marginBottom: 12 }]}
+                        onPress={() => navigation.navigate('Compare', { product })}
+                    >
+                        <Text style={[styles.ctaBtnText, { color: primaryColor }]}>⚖️  Compare healthier options</Text>
+                    </TouchableOpacity>
+                )}
+
                 {/* CTA */}
                 <TouchableOpacity
                     style={[styles.pantryBtn, { backgroundColor: inPantryState ? Colors.accent : primaryColor }]}
