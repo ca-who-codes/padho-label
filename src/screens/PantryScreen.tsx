@@ -6,19 +6,35 @@ import {
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList, PantryItem } from '../types';
-import { getPantryItems, computePantryScore, getPantryGrade, getGradeColor, getSwapCandidates, removeFromPantry } from '../services/pantryService';
+import { getPantryItems, computePantryScore, getPantryGrade, getGradeColor, getSwapCandidates, removeFromPantry, findBetterAlternative, type PantrySwap } from '../services/pantryService';
 import { Colors, Spacing, Radius, Shadow } from '../theme';
-import { Package, TrendingUp, Trash2, Camera } from 'lucide-react-native';
+import { Package, TrendingUp, Trash2, Camera, ShoppingCart } from 'lucide-react-native';
+import { initIntelligence } from '../services/intelligence';
+import { getHealthConstraints } from '../services/userProfileService';
+import { openOnSwiggy } from '../services/swiggy';
 
 type Props = BottomTabScreenProps<RootStackParamList, 'Pantry'>;
 
 export default function PantryScreen({ navigation }: Props) {
     const [items, setItems] = useState<PantryItem[]>([]);
+    const [swaps, setSwaps] = useState<Record<string, PantrySwap>>({});
     const isFocused = useIsFocused();
 
     const load = useCallback(async () => {
         const data = await getPantryItems();
         setItems(data);
+        // Concrete swap suggestions from the intelligence catalog.
+        await initIntelligence();
+        let constraints = null;
+        try { constraints = await getHealthConstraints(); } catch { constraints = null; }
+        const map: Record<string, PantrySwap> = {};
+        for (const it of data) {
+            if (it.personalizedScore < 55) {
+                const alt = findBetterAlternative(it, constraints);
+                if (alt) map[it.id] = alt;
+            }
+        }
+        setSwaps(map);
     }, []);
 
     useEffect(() => { if (isFocused) load(); }, [isFocused, load]);
@@ -115,15 +131,33 @@ export default function PantryScreen({ navigation }: Props) {
                             <TrendingUp color={Colors.warning} size={18} />
                             <Text style={styles.sectionTitle}>Upgrade These 🔄</Text>
                         </View>
-                        {swapCandidates.filter(s => s.personalizedScore < 55).map(item => (
+                        {swapCandidates.filter(s => s.personalizedScore < 55).map(item => {
+                            const swap = swaps[item.id];
+                            return (
                             <View key={item.id} style={styles.swapCard}>
                                 {item.productImage && <Image source={{ uri: item.productImage }} style={styles.swapImage} />}
                                 <View style={{ flex: 1 }}>
                                     <Text style={styles.swapName} numberOfLines={1}>{item.productName}</Text>
-                                    <Text style={[styles.swapScore, { color: Colors.danger }]}>Score {item.personalizedScore}/100 · Look for a better alternative</Text>
+                                    {swap ? (
+                                        <Text style={styles.swapScore} numberOfLines={2}>
+                                            <Text style={{ color: Colors.danger }}>{item.personalizedScore}/100 → </Text>
+                                            <Text style={{ color: Colors.success }}>try {swap.toName} ({swap.toScore})</Text>
+                                        </Text>
+                                    ) : (
+                                        <Text style={[styles.swapScore, { color: Colors.danger }]}>Score {item.personalizedScore}/100 · Look for a better alternative</Text>
+                                    )}
                                 </View>
+                                {swap && (
+                                    <TouchableOpacity
+                                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.primary, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8 }}
+                                        onPress={() => openOnSwiggy(`${swap.toBrand || ''} ${swap.toName}`)}
+                                    >
+                                        <ShoppingCart color="#fff" size={14} />
+                                        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Swiggy</Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
-                        ))}
+                        );})}
                     </View>
                 )}
 

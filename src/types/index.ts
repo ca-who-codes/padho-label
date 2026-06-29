@@ -115,6 +115,7 @@ export type PantryItem = {
     productBrand?: string;
     productImage?: string;
     productCategory?: 'food' | 'beauty';
+    subCategory?: string;
     personalizedScore: number;
     addedAt: number;
     quantity?: number;

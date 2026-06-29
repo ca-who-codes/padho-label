@@ -14,7 +14,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList } from '../types';
 import { resolveByBarcode } from '../services/intelligence';
 import { saveToHistory } from '../services/history';
-import { XCircle, RefreshCw, Hash } from 'lucide-react-native';
+import { XCircle, RefreshCw, Hash, Camera as SnapIcon } from 'lucide-react-native';
 import { Colors, Spacing, Radius } from '../theme';
 
 type Props = BottomTabScreenProps<RootStackParamList, 'Scan'>;
@@ -110,7 +110,7 @@ export default function ScanScreen({ navigation }: Props) {
                 setErrorMsg(
                     isTimeout
                         ? 'Connection timed out. Check your internet and tap Retry.'
-                        : `Error: ${error.message || 'Unknown'}. Tap Retry.`
+                        : "Couldn't fetch product details. Snap the label, or retry."
                 );
                 setActive(false);
             } else {
@@ -163,7 +163,7 @@ export default function ScanScreen({ navigation }: Props) {
             navigation.navigate('Result', { product });
         } else if (error) {
             setErrorType('generic');
-            setErrorMsg(`Error: ${error.message || 'Unknown'}. Tap Retry.`);
+            setErrorMsg("Couldn't fetch product details. Snap the label, or retry.");
         } else {
             setErrorType('notfound');
             setErrorMsg('Product not found in database. Try snapping the ingredients label.');
@@ -254,24 +254,26 @@ export default function ScanScreen({ navigation }: Props) {
                 ]}>
                     <Text style={styles.errorText}>{errorMsg}</Text>
                     <View style={styles.errorActions}>
-                        {errorType === 'notfound' ? (
-                            <TouchableOpacity
-                                onPress={() => {
-                                    const skeleton = {
-                                        barcode: lastBarcode.current || 'unknown',
-                                        name: 'Unknown Product',
-                                        nutrition: {} as any,
-                                        scannedAt: Date.now(),
-                                    };
-                                    navigation.navigate('IngredientsSnap', { product: skeleton as any });
-                                }}
-                                style={styles.retryBtn}
-                            >
-                                <RefreshCw color="#fff" size={16} />
-                                <Text style={styles.retryBtnText}>Scan Ingredients 📸</Text>
-                            </TouchableOpacity>
-                        ) : (
-                            <TouchableOpacity onPress={handleRetry} style={styles.retryBtn}>
+                        {/* Snap is the primary fallback for ANY barcode failure —
+                            most Indian SKUs aren't in the barcode databases. */}
+                        <TouchableOpacity
+                            onPress={() => {
+                                const skeleton = {
+                                    barcode: lastBarcode.current || 'unknown',
+                                    name: 'Unknown Product',
+                                    nutrition: {} as any,
+                                    scannedAt: Date.now(),
+                                };
+                                setErrorMsg(null); setErrorType(null);
+                                navigation.navigate('IngredientsSnap', { product: skeleton as any });
+                            }}
+                            style={styles.retryBtn}
+                        >
+                            <SnapIcon color="#fff" size={16} />
+                            <Text style={styles.retryBtnText}>Snap the label</Text>
+                        </TouchableOpacity>
+                        {errorType !== 'notfound' && (
+                            <TouchableOpacity onPress={handleRetry} style={[styles.retryBtn, { backgroundColor: Colors.textMuted }]}>
                                 <RefreshCw color="#fff" size={16} />
                                 <Text style={styles.retryBtnText}>Retry</Text>
                             </TouchableOpacity>

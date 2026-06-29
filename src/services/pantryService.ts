@@ -7,6 +7,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PantryItem, HealthConstraints, Product } from '../types';
 import { calculatePersonalizedScore } from './ratingEngine';
+import { categoryProducts, rankProducts, lineKey } from './intelligence';
 
 const PANTRY_KEY = '@padho_pantry_items';
 
@@ -38,6 +39,7 @@ export const addToPantry = async (
         productBrand: product.brand,
         productImage: product.image_url,
         productCategory: product.category,
+        subCategory: product.subCategory,
         personalizedScore,
         addedAt: Date.now(),
         quantity,
@@ -131,4 +133,41 @@ export const getSwapCandidates = (items: PantryItem[]): PantryItem[] => {
     return [...items]
         .sort((a, b) => a.personalizedScore - b.personalizedScore)
         .slice(0, 3);
+};
+
+// ─── Concrete swap from the intelligence catalog ───────────────────────────────
+
+export type PantrySwap = {
+    fromId: string;
+    toName: string;
+    toBrand?: string;
+    toScore: number;
+    toProduct: Product;
+};
+
+/**
+ * Find a concretely better-scored product in the same sub-category from the local
+ * intelligence (seed + learned). Returns null unless something meaningfully better
+ * exists. Requires `initIntelligence()` to have run; otherwise the catalog is empty
+ * and this returns null gracefully.
+ */
+export const findBetterAlternative = (
+    item: PantryItem,
+    constraints: HealthConstraints | null,
+): PantrySwap | null => {
+    if (!item.subCategory) return null;
+    const fromKey = lineKey(item.productBrand, item.productName);
+    const pool = categoryProducts(item.subCategory).filter(p => lineKey(p.brand, p.name) !== fromKey);
+    if (pool.length === 0) return null;
+    const best = rankProducts(pool, constraints)[0];
+    if (best && best.score >= item.personalizedScore + 8) {
+        return {
+            fromId: item.id,
+            toName: best.product.name,
+            toBrand: best.product.brand,
+            toScore: best.score,
+            toProduct: best.product,
+        };
+    }
+    return null;
 };
