@@ -24,43 +24,80 @@ const OCR_URL = 'https://api.ocr.space/parse/image';
 export const isOCRConfigured = (): boolean =>
     !!process.env.EXPO_PUBLIC_OCRSPACE_API_KEY;
 
+/** OCR outcome — text on success, a human-readable reason on failure. */
+export type OCRResult = { text: string | null; error: string | null };
+
+/** Turn an OCR.space / network error into a short, actionable message. */
+const explainOcrError = (raw: string): string => {
+    const low = raw.toLowerCase();
+    if (low.includes('rate') || low.includes('limit') || low.includes('exceed') || low.includes('throttl')) {
+        return 'OCR is rate-limited (shared demo key). Add a free OCR.space key to fix this.';
+    }
+    if (low.includes('size') || low.includes('large') || low.includes('1 mb') || low.includes('1mb') || low.includes('filesize')) {
+        return 'Photo too large for OCR — step back a little and retry.';
+    }
+    if (low.includes('apikey') || low.includes('api key') || low.includes('invalid')) {
+        return 'OCR key was rejected. Set EXPO_PUBLIC_OCRSPACE_API_KEY.';
+    }
+    return raw.slice(0, 140);
+};
+
 // ─── OCR: image → raw text ──────────────────────────────────────────────────
 
 /**
- * Runs OCR on a local image URI and returns the recognised text, or null on
- * failure. Never throws — the caller decides how to surface failure.
+ * Runs OCR on a local image URI. Never throws — returns { text, error } so the
+ * caller can both use the text and tell the user *why* it failed.
+ *
+ * Sends the image as application/x-www-form-urlencoded rather than multipart:
+ * React Native + axios do not reliably set the multipart boundary, which
+ * silently corrupts the upload and was making every OCR call fail.
  */
-export const runOCROnImage = async (imageUri: string): Promise<string | null> => {
+export const runOCROnImage = async (imageUri: string): Promise<OCRResult> => {
+    let base64: string | undefined;
     try {
-        // Compress + resize so we stay well under OCR.space's 1 MB free-tier
-        // limit, while keeping enough resolution for label text.
+        // Resize/compress to stay comfortably under OCR.space's 1 MB free-tier
+        // limit (base64 inflates ~33%) while keeping label text legible.
         const manipulated = await ImageManipulator.manipulateAsync(
             imageUri,
-            [{ resize: { width: 1280 } }],
-            { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+            [{ resize: { width: 1000 } }],
+            { compress: 0.4, format: ImageManipulator.SaveFormat.JPEG, base64: true },
         );
-        if (!manipulated.base64) return null;
+        base64 = manipulated.base64 ?? undefined;
+    } catch {
+        return { text: null, error: 'Could not read the captured photo. Retry.' };
+    }
+    if (!base64) return { text: null, error: 'Could not read the captured photo. Retry.' };
 
-        const form = new FormData();
-        form.append('base64Image', `data:image/jpeg;base64,${manipulated.base64}`);
-        form.append('apikey', OCR_API_KEY);
-        form.append('language', 'eng');
-        form.append('OCREngine', '2');     // engine 2 handles small label text well
-        form.append('scale', 'true');
-        form.append('detectOrientation', 'true');
+    const body = [
+        `base64Image=${encodeURIComponent(`data:image/jpeg;base64,${base64}`)}`,
+        `apikey=${encodeURIComponent(OCR_API_KEY)}`,
+        'language=eng',
+        'OCREngine=2',     // engine 2 handles small label text well
+        'isTable=true',    // nutrition panels are tables
+        'scale=true',
+        'detectOrientation=true',
+    ].join('&');
 
-        const res = await axios.post(OCR_URL, form, {
-            headers: { 'Content-Type': 'multipart/form-data' },
+    try {
+        const res = await axios.post(OCR_URL, body, {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             timeout: 25000,
         });
-
         const data = res.data;
-        if (!data || data.IsErroredOnProcessing) return null;
-        const text = data.ParsedResults?.[0]?.ParsedText;
-        return text ? String(text) : null;
-    } catch (err) {
-        console.warn('OCR error:', err);
-        return null;
+        if (data?.IsErroredOnProcessing) {
+            const msg = Array.isArray(data.ErrorMessage) ? data.ErrorMessage.join(' ') : data.ErrorMessage;
+            return { text: null, error: explainOcrError(String(msg || 'OCR failed.')) };
+        }
+        const text = data?.ParsedResults?.[0]?.ParsedText;
+        if (!text || !String(text).trim()) {
+            return { text: null, error: 'No text detected. Fill the frame with the label and use good light.' };
+        }
+        return { text: String(text), error: null };
+    } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 401 || status === 403) return { text: null, error: 'OCR key was rejected. Set EXPO_PUBLIC_OCRSPACE_API_KEY.' };
+        if (err?.code === 'ECONNABORTED') return { text: null, error: 'OCR timed out. Check your connection and retry.' };
+        return { text: null, error: 'OCR service unavailable. Retry, or type the values in below.' };
     }
 };
 

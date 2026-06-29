@@ -70,6 +70,7 @@ export default function IngredientsSnap({ route, navigation }: Props) {
     const [statusMsg, setStatusMsg] = useState('');
     const [imageUri, setImageUri] = useState<string | null>(null);
     const [extractedNutrition, setExtractedNutrition] = useState<Partial<NutritionData>>({});
+    const [ocrNote, setOcrNote] = useState<string | null>(null);
     // Editable string drafts are the source of truth on the review screen.
     const [drafts, setDrafts] = useState<Record<string, string>>(() => nutritionToDrafts(product.nutrition || {}));
 
@@ -87,10 +88,13 @@ export default function IngredientsSnap({ route, navigation }: Props) {
 
             setStatusMsg('Reading label with OCR…');
             let ocrText: string | null = null;
+            let ocrErr: string | null = null;
             try {
-                ocrText = await runOCROnImage(uri);
+                const r = await runOCROnImage(uri);
+                ocrText = r.text;
+                ocrErr = r.error;
             } catch {
-                /* OCR API unavailable — fall through to local parse */
+                ocrErr = 'OCR service unavailable.';
             }
 
             setStatusMsg('Extracting nutrition values…');
@@ -99,6 +103,8 @@ export default function IngredientsSnap({ route, navigation }: Props) {
 
             setExtractedNutrition(ocrExtracted);
             setDrafts(nutritionToDrafts(merged));
+            // If OCR pulled nothing usable, tell the user why so it's not a silent fail.
+            setOcrNote(Object.keys(ocrExtracted).length === 0 ? (ocrErr || 'No values detected — type them in below.') : null);
 
             await updateProductInHistory(product.barcode, {
                 ingredientsImageUri: uri,
@@ -131,6 +137,7 @@ export default function IngredientsSnap({ route, navigation }: Props) {
         setStage('camera');
         setStatusMsg('');
         setExtractedNutrition({});
+        setOcrNote(null);
         setDrafts(nutritionToDrafts(product.nutrition || {}));
         setImageUri(null);
     };
@@ -188,8 +195,8 @@ export default function IngredientsSnap({ route, navigation }: Props) {
                                 ? `Found ${foundCount} value${foundCount !== 1 ? 's' : ''} — review & edit`
                                 : 'Nothing detected — type the values in'}
                         </Text>
-                        <Text style={styles.resultBannerSub}>
-                            Tap any field to add or correct a value. The grade updates live.
+                        <Text style={[styles.resultBannerSub, ocrNote ? { color: Colors.warning } : null]}>
+                            {ocrNote || 'Tap any field to add or correct a value. The grade updates live.'}
                         </Text>
                     </View>
                 </View>

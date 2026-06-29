@@ -10,13 +10,14 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ArrowLeft, ChevronRight, Trophy } from 'lucide-react-native';
+import { ArrowLeft, ChevronRight, Trophy, ShoppingCart } from 'lucide-react-native';
 import { RootStackParamList, HealthConstraints } from '../types';
 import { getHealthConstraints } from '../services/userProfileService';
 import {
     initIntelligence, categoryProducts, rankProducts, lineKey, decisiveAxisFor,
     type RankedProduct,
 } from '../services/intelligence';
+import { openOnSwiggy } from '../services/swiggy';
 import { Colors, Spacing, Radius } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Compare'>;
@@ -117,6 +118,15 @@ export default function CompareScreen({ route, navigation }: Props) {
                 <ScrollView contentContainerStyle={styles.list}>
                     <Text style={styles.count}>{ranked.length} options compared</Text>
                     {ranked.map(renderCard)}
+                    {ranked[0] && (
+                        <TouchableOpacity
+                            style={styles.swiggyBtn}
+                            onPress={() => openOnSwiggy(`${ranked[0].product.brand || ''} ${ranked[0].product.name}`)}
+                        >
+                            <ShoppingCart color="#fff" size={16} />
+                            <Text style={styles.swiggyBtnText}>Order the top pick on Swiggy</Text>
+                        </TouchableOpacity>
+                    )}
                     <Text style={styles.footnote}>
                         Scores are personalised to your profile. Availability and price are confirmed on Swiggy at checkout.
                     </Text>
@@ -162,4 +172,6 @@ const styles = StyleSheet.create({
     youPill: { backgroundColor: Colors.border, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6 },
     youPillText: { color: Colors.textSecondary, fontSize: 10, fontWeight: '700' },
     footnote: { fontSize: 11, color: Colors.textMuted, marginTop: 8, lineHeight: 16 },
+    swiggyBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.primary, paddingVertical: 13, borderRadius: Radius.md, marginTop: 14 },
+    swiggyBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });
