@@ -86,6 +86,36 @@ export const remember = async (p: Product, source: IntelSource): Promise<void> =
     rebuild();
 };
 
+/**
+ * Name/brand search over the local catalog (seed + learned). Instant and
+ * offline — Home search shows these before any network results arrive.
+ */
+export const searchCatalog = (query: string, limit = 12): IntelRecord[] => {
+    if (!index) return [];
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    const qTokens = q.split(/\s+/).filter(t => t.length >= 2);
+    const scored = index.all
+        .map(r => {
+            const hay = `${r.brand || ''} ${r.name}`.toLowerCase();
+            let s = 0;
+            if (hay.includes(q)) s += 3;
+            for (const t of qTokens) if (hay.includes(t)) s += 1;
+            return { r, s };
+        })
+        .filter(x => x.s > 0)
+        .sort((a, b) => b.s - a.s);
+    const seen = new Set<string>();
+    const out: IntelRecord[] = [];
+    for (const { r } of scored) {
+        if (seen.has(r.lineKey)) continue;
+        seen.add(r.lineKey);
+        out.push(r);
+        if (out.length >= limit) break;
+    }
+    return out;
+};
+
 /** All records in a sub-category (or broad category) — powers ranked compare/browse. */
 export const categoryProducts = (categoryOrSub: string): IntelRecord[] => {
     if (!index) return [];

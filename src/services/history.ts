@@ -54,3 +54,16 @@ export const getHistoryCount = async (): Promise<number> => {
     const h = await getHistory();
     return h.length;
 };
+
+/** Remove a single product from history. Returns the updated list. */
+export const removeFromHistory = async (barcode: string): Promise<Product[]> => {
+    try {
+        const history = await getHistory();
+        const updated = history.filter(p => p.barcode !== barcode);
+        await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+        return updated;
+    } catch (error) {
+        console.error('Error removing from history:', error);
+        return getHistory();
+    }
+};

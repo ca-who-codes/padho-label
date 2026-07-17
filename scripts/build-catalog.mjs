@@ -24,6 +24,13 @@ const OUT_FILE = join(__dirname, '..', 'src', 'services', 'intelligence', 'seed.
 const SUBCAT_MATCHERS = [
     [/biscuit/i, 'biscuits'],
     [/cookie/i, 'cookies'],
+    [/noodle|pasta|vermicelli|macaroni/i, 'noodles'],
+    [/chocolate/i, 'chocolates'],
+    [/ice.?cream|frozen.?dessert|kulfi/i, 'icecream'],
+    [/spread|peanut.?butter|\bjam\b|honey/i, 'spreads'],
+    [/ketchup|sauce|mayonnaise|chutney/i, 'sauces'],
+    [/\bbread\b|\bbun\b|\bpav\b/i, 'breads'],
+    [/mithai|halwa|laddu|barfi|gulab.?jamun|rasgulla|soan.?papdi/i, 'sweets'],
     [/cereal|muesli|granola|oats/i, 'cereals'],
     [/breakfast/i, 'breakfast'],
     [/\boils?\b|ghee/i, 'oils'],

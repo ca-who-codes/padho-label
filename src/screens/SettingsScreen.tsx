@@ -1,17 +1,30 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { Trash2, ShieldCheck, Heart, Package } from 'lucide-react-native';
+import { Trash2, ShieldCheck, Heart, Package, Database } from 'lucide-react-native';
 import { clearHistory } from '../services/history';
 import { clearPantry } from '../services/pantryService';
+import { initIntelligence, intelligenceStats } from '../services/intelligence';
+import { contributionCount } from '../services/intelligence';
 import { Colors, Spacing, Radius, Shadow, Typography, APP_VERSION } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export default function SettingsScreen(_props: Props) {
+    const [stats, setStats] = useState({ total: 0, learned: 0, seed: 0 });
+    const [queued, setQueued] = useState(0);
+
+    useEffect(() => {
+        (async () => {
+            await initIntelligence();
+            setStats(intelligenceStats());
+            setQueued(await contributionCount());
+        })();
+    }, []);
+
     const confirm = (title: string, message: string, onConfirm: () => Promise<void>) => {
         Alert.alert(title, message, [
             { text: 'Cancel', style: 'cancel' },
@@ -33,12 +46,31 @@ export default function SettingsScreen(_props: Props) {
 
     return (
         <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
+            {/* Catalog */}
+            <Text style={styles.sectionHeader}>Your catalog</Text>
+            <View style={styles.card}>
+                <View style={styles.settingItem}>
+                    <View style={styles.itemLeft}>
+                        <View style={[styles.iconWrap, { backgroundColor: Colors.accentLight }]}>
+                            <Database size={18} color={Colors.accent} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.settingLabel}>{stats.total} products on this device</Text>
+                            <Text style={styles.settingSubLabel}>
+                                {stats.seed} bundled · {stats.learned} learned from your scans
+                                {queued > 0 ? ` · ${queued} queued for the shared catalog` : ''}
+                            </Text>
+                        </View>
+                    </View>
+                </View>
+            </View>
+
             {/* Data */}
             <Text style={styles.sectionHeader}>Data</Text>
             <View style={styles.card}>
                 <TouchableOpacity style={styles.settingItem} onPress={handleClearHistory}>
                     <View style={styles.itemLeft}>
-                        <View style={[styles.iconWrap, { backgroundColor: '#fff5f5' }]}>
+                        <View style={[styles.iconWrap, { backgroundColor: Colors.dangerBg }]}>
                             <Trash2 size={18} color={Colors.danger} />
                         </View>
                         <Text style={[styles.settingLabel, { color: Colors.danger }]}>Clear Scan History</Text>
@@ -47,7 +79,7 @@ export default function SettingsScreen(_props: Props) {
                 <View style={styles.divider} />
                 <TouchableOpacity style={styles.settingItem} onPress={handleClearPantry}>
                     <View style={styles.itemLeft}>
-                        <View style={[styles.iconWrap, { backgroundColor: '#fff5f5' }]}>
+                        <View style={[styles.iconWrap, { backgroundColor: Colors.dangerBg }]}>
                             <Package size={18} color={Colors.danger} />
                         </View>
                         <Text style={[styles.settingLabel, { color: Colors.danger }]}>Clear Pantry</Text>
@@ -71,11 +103,11 @@ export default function SettingsScreen(_props: Props) {
                 <View style={styles.settingItem}>
                     <View style={styles.itemLeft}>
                         <View style={[styles.iconWrap, { backgroundColor: '#fce4ec' }]}>
-                            <Heart size={18} color="#e91e63" />
+                            <Heart size={18} color={Colors.beauty} />
                         </View>
                         <View style={{ flex: 1 }}>
                             <Text style={styles.settingLabel}>Nutrition Data</Text>
-                            <Text style={styles.settingSubLabel}>Open Food Facts · Open Beauty Facts</Text>
+                            <Text style={styles.settingSubLabel}>Pack labels · Open Food Facts · Open Beauty Facts</Text>
                         </View>
                     </View>
                 </View>
@@ -96,8 +128,8 @@ const styles = StyleSheet.create({
     settingItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: Spacing.md, paddingHorizontal: Spacing.md },
     itemLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
     iconWrap: { width: 34, height: 34, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center', marginRight: Spacing.md },
-    settingLabel: { fontSize: 15, color: Colors.textPrimary, fontWeight: '500' },
-    settingSubLabel: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+    settingLabel: { fontSize: 15, color: Colors.textPrimary, fontWeight: '600' },
+    settingSubLabel: { fontSize: 12, color: Colors.textMuted, marginTop: 2, lineHeight: 17 },
     itemValue: { fontSize: 14, color: Colors.textMuted },
     footer: { fontSize: 12, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.xl, marginHorizontal: Spacing.xl, lineHeight: 18 },
 });

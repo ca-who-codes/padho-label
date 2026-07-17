@@ -2,7 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     TextInput, ScrollView, Animated, Dimensions, Alert,
+    KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, UserProfile, DietType, HealthGoal, HealthCondition, AllergyType, ActivityLevel } from '../types';
 import { saveUserProfile, markOnboardingDone, DEFAULT_PREFERENCES, getUserProfile } from '../services/userProfileService';
@@ -63,6 +65,7 @@ const ALLERGY_OPTIONS: { label: string; value: AllergyType; emoji: string }[] = 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function OnboardingScreen({ navigation }: Props) {
+    const insets = useSafeAreaInsets();
     const [step, setStep] = useState(0);
     const slideAnim = useRef(new Animated.Value(0)).current;
     // Identity of an existing profile, preserved across edits.
@@ -177,7 +180,8 @@ export default function OnboardingScreen({ navigation }: Props) {
     );
 
     const renderStep1 = () => (
-        <View style={styles.stepContainer}>
+        <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <View style={styles.stepContainer}>
             <Text style={styles.stepTitle}>About You</Text>
             <Text style={styles.stepSubtitle}>So we can personalise your health scores</Text>
             <TextInput style={styles.input} placeholder="Your name" value={name} onChangeText={setName} placeholderTextColor={Colors.textMuted} />
@@ -197,7 +201,8 @@ export default function OnboardingScreen({ navigation }: Props) {
                     </TouchableOpacity>
                 ))}
             </View>
-        </View>
+            </View>
+        </ScrollView>
     );
 
     const renderStep2 = () => (
@@ -292,9 +297,12 @@ export default function OnboardingScreen({ navigation }: Props) {
     const stepContent = [renderStep0, renderStep1, renderStep2, renderStep3, renderStep4];
 
     return (
-        <View style={styles.wrapper}>
+        <KeyboardAvoidingView
+            style={styles.wrapper}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
             {/* Progress bar */}
-            <View style={styles.progressBar}>
+            <View style={[styles.progressBar, { paddingTop: insets.top + 16 }]}>
                 {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
                     <View key={i} style={[styles.progressDot, i <= step && styles.progressDotActive, i < step && styles.progressDotDone]} />
                 ))}
@@ -336,7 +344,7 @@ export default function OnboardingScreen({ navigation }: Props) {
                     <Text style={styles.skipText}>Skip for now</Text>
                 </TouchableOpacity>
             )}
-        </View>
+        </KeyboardAvoidingView>
     );
 }
 
@@ -344,7 +352,7 @@ const styles = StyleSheet.create({
     wrapper: { flex: 1, backgroundColor: '#fff' },
     progressBar: {
         flexDirection: 'row', gap: 6, alignSelf: 'center',
-        paddingTop: 60, paddingBottom: Spacing.md,
+        paddingBottom: Spacing.md,
     },
     progressDot: {
         width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.border,

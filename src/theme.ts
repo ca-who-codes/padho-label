@@ -1,56 +1,73 @@
+/**
+ * theme.ts — Padho Label design system v5
+ *
+ * One place for colour, type, spacing, radius and shadow. Screens compose these
+ * tokens; nothing hardcodes hex values. The palette: a calm neutral canvas so the
+ * GRADE colours (the health verdict) are the loudest thing on screen, with saffron
+ * kept as the brand accent.
+ */
+
 export const Colors = {
-    // Brand (Indian Inspired / Clean)
-    primary: '#FF9933', // Saffron
-    primaryDark: '#E68A2E',
-    primaryLight: '#FFF4E6',
+    // Brand
+    primary: '#FF6B2C',      // saffron, modernised
+    primaryDark: '#E05A1F',
+    primaryLight: '#FFF1E9',
+    accent: '#0E9F6E',       // green for "healthy" moments
+    accentLight: '#E6F6EF',
 
-    accent: '#138808',  // India Green for healthy items
+    // Grades — Nutri-Score-familiar, tuned for white text contrast
+    gradeA: '#038141',
+    gradeB: '#6BA72B',
+    gradeC: '#E4A400',
+    gradeD: '#E8710D',
+    gradeE: '#D7331C',
 
-    // Grades (Enhanced contrast)
-    gradeA: '#1B5E20',
-    gradeB: '#4CAF50',
-    gradeC: '#FFC107',
-    gradeD: '#FF9800',
-    gradeE: '#D32F2F',
-
-    // Neutrals (White & Cream)
-    background: '#FEF9E7', // Cream
+    // Canvas
+    background: '#F6F7F9',
     card: '#FFFFFF',
-    border: '#EAECEE',
-    divider: '#F2F4F4',
+    border: '#EAECF0',
+    divider: '#F2F4F7',
 
     // Text
-    textPrimary: '#1C2833',
-    textSecondary: '#566573',
-    textMuted: '#ABB2B9',
+    textPrimary: '#101828',
+    textSecondary: '#475467',
+    textMuted: '#98A2B3',
+    textInverse: '#FFFFFF',
 
     // Semantic
-    danger: '#E74C3C',
-    success: '#27AE60',
-    warning: '#F39C12',
-    info: '#3498DB',
+    danger: '#D92D20',
+    dangerBg: '#FEF3F2',
+    warning: '#DC6803',
+    warningBg: '#FFFAEB',
+    success: '#079455',
+    successBg: '#ECFDF3',
+    info: '#1570EF',
+    infoBg: '#EFF8FF',
 
-    // Status Dots (Nutrient Analysis - Matching screenshot colors)
-    statusPositive: '#2E7D32', // Deep green
-    statusNegative: '#D32F2F', // Deep red
-    statusFair: '#F57C00',     // Deep orange
-    statusLow: '#90A4AE',      // Muted grey
+    // Nutrient status dots
+    statusPositive: '#079455',
+    statusNegative: '#D92D20',
+    statusFair: '#DC6803',
+    statusLow: '#98A2B3',
 
-    // UI Elements
-    pillBackground: '#F0F3F4',
-    pillText: '#566573',
-};
+    // UI
+    pillBackground: '#F2F4F7',
+    pillText: '#475467',
+    overlay: 'rgba(16, 24, 40, 0.55)',
+    beauty: '#DD2590',
+} as const;
 
 export const Typography = {
-    h1: { fontSize: 32, fontWeight: '800' as const, color: Colors.textPrimary },
-    h2: { fontSize: 24, fontWeight: '700' as const, color: Colors.textPrimary },
-    h3: { fontSize: 20, fontWeight: '600' as const, color: Colors.textPrimary },
-    body: { fontSize: 16, color: Colors.textPrimary },
-    bodySmall: { fontSize: 14, color: Colors.textSecondary },
+    display: { fontSize: 30, fontWeight: '900' as const, color: Colors.textPrimary, letterSpacing: -0.7 },
+    h1: { fontSize: 26, fontWeight: '800' as const, color: Colors.textPrimary, letterSpacing: -0.5 },
+    h2: { fontSize: 21, fontWeight: '800' as const, color: Colors.textPrimary, letterSpacing: -0.3 },
+    h3: { fontSize: 17, fontWeight: '700' as const, color: Colors.textPrimary },
+    body: { fontSize: 15, color: Colors.textPrimary, lineHeight: 22 },
+    bodySmall: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19 },
     caption: { fontSize: 12, color: Colors.textMuted },
     label: {
-        fontSize: 12,
-        fontWeight: '700' as const,
+        fontSize: 11,
+        fontWeight: '800' as const,
         color: Colors.textMuted,
         textTransform: 'uppercase' as const,
         letterSpacing: 1,
@@ -70,31 +87,32 @@ export const Radius = {
     sm: 8,
     md: 12,
     lg: 16,
-    xl: 24,
+    xl: 20,
+    xxl: 28,
     full: 999,
 };
 
 export const Shadow = {
     sm: {
         elevation: 2,
-        shadowColor: '#000',
+        shadowColor: '#101828',
         shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
+        shadowOpacity: 0.06,
         shadowRadius: 3,
     },
     md: {
         elevation: 4,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.15,
-        shadowRadius: 6,
+        shadowColor: '#101828',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
     },
     lg: {
         elevation: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
+        shadowColor: '#101828',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.12,
+        shadowRadius: 16,
     },
 };
 
@@ -109,6 +127,15 @@ export const GRADE_COLORS: Record<string, string> = {
 
 /** Map a letter grade (A–E) to its colour, with a neutral fallback. */
 export const gradeColor = (grade?: string | null): string =>
-    (grade && GRADE_COLORS[grade]) || Colors.textMuted;
+    (grade && GRADE_COLORS[grade.toUpperCase()]) || Colors.textMuted;
 
-export const APP_VERSION = '4.0.0';
+/** Map a 0–100 score (higher = better) to a grade colour. */
+export const scoreColor = (score: number): string => {
+    if (score >= 80) return Colors.gradeA;
+    if (score >= 65) return Colors.gradeB;
+    if (score >= 50) return Colors.gradeC;
+    if (score >= 35) return Colors.gradeD;
+    return Colors.gradeE;
+};
+
+export const APP_VERSION = '5.0.0';
