@@ -1,18 +1,30 @@
+/**
+ * HomeScanScreen — v5.
+ *
+ * Search is LOCAL-FIRST: the bundled Indian catalog + everything this device has
+ * learned answers instantly (offline), and Open Food Facts results merge in
+ * behind it. The hero stays focused on the one action that matters: scan.
+ */
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
-    TextInput, FlatList, Image, Animated, ActivityIndicator,
+    TextInput, FlatList, Image, ActivityIndicator,
 } from 'react-native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useIsFocused } from '@react-navigation/native';
-import { RootStackParamList, Product } from '../types';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { RootStackParamList, Product, HealthConstraints } from '../types';
 import {
-    Camera, Search, ChevronRight, Lightbulb, Salad, Package, Clock,
+    ScanBarcode, Search, ChevronRight, Lightbulb, Salad, Package, Clock, X,
 } from 'lucide-react-native';
 import { Colors, Spacing, Radius, Shadow } from '../theme';
 import { getHistory, saveToHistory } from '../services/history';
-import { calculateNutriScore } from '../services/ratingEngine';
+import { calculateNutriScore, calculatePersonalizedScore } from '../services/ratingEngine';
+import { getHealthConstraints, getUserProfile } from '../services/userProfileService';
 import { searchProducts } from '../services/api';
+import { initIntelligence, searchCatalog } from '../services/intelligence';
+import { GradeBadge } from '../components';
 
 type Props = BottomTabScreenProps<RootStackParamList, 'Home'>;
 
@@ -22,106 +34,108 @@ const HEALTH_TIPS = [
     'Ultra-processed foods (NOVA 4) carry many additives. Prefer NOVA 1 & 2.',
     'Saturated fat raises LDL cholesterol. Keep below 5g/100g for heart health.',
     'Scan the barcode before you buy — front-of-pack claims can be misleading.',
-    'A Nutri-Score of A or B still rewards mindful portion control.',
+    '1 teaspoon of sugar ≈ 4g. A single cola can pack 8+ teaspoons.',
+    'Sodium hides in namkeen and instant noodles — check the per-100g number.',
 ];
 
+type SearchRow = { product: Product; source: 'local' | 'off' };
+
 export default function HomeScanScreen({ navigation }: Props) {
+    const insets = useSafeAreaInsets();
     const [searchQuery, setSearchQuery] = useState('');
     const [recentScans, setRecentScans] = useState<Product[]>([]);
     const [tipIndex] = useState(() => Math.floor(Math.random() * HEALTH_TIPS.length));
     const [userName, setUserName] = useState('');
-    const [apiResults, setApiResults] = useState<Product[]>([]);
+    const [constraints, setConstraints] = useState<HealthConstraints | null>(null);
+    const [localResults, setLocalResults] = useState<SearchRow[]>([]);
+    const [offResults, setOffResults] = useState<SearchRow[]>([]);
     const [searching, setSearching] = useState(false);
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isFocused = useIsFocused();
 
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const slideAnim = useRef(new Animated.Value(30)).current;
-
-    useEffect(() => {
-        Animated.parallel([
-            Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-            Animated.timing(slideAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
-        ]).start();
-    }, []);
-
     const loadData = useCallback(async () => {
-        const [history, profile] = await Promise.all([
+        const [history, profile, cons] = await Promise.all([
             getHistory(),
-            import('../services/userProfileService').then(m => m.getUserProfile()),
+            getUserProfile(),
+            getHealthConstraints().catch(() => null),
         ]);
-        setRecentScans(history.slice(0, 3));
-        if (profile?.name) setUserName(profile.name);
+        setRecentScans(history.slice(0, 5));
+        setConstraints(cons);
+        if (profile?.name && profile.name !== 'Friend') setUserName(profile.name);
     }, []);
 
     useEffect(() => { if (isFocused) loadData(); }, [isFocused, loadData]);
+    useEffect(() => { initIntelligence(); }, []);
 
     const getGreeting = () => {
         const hour = new Date().getHours();
         const base = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-        return `${base}${userName ? ', ' + userName : ''}!`;
+        return `${base}${userName ? ', ' + userName : ''}`;
     };
 
-    // Debounced Open Food Facts search
+    // Instant local search + debounced Open Food Facts merge
     useEffect(() => {
         const query = searchQuery.trim();
         if (query.length < 2) {
-            setApiResults([]);
+            setLocalResults([]);
+            setOffResults([]);
             setSearching(false);
             return;
         }
+        // Local: synchronous, instant, offline.
+        const local = searchCatalog(query, 10).map(r => ({ product: r as Product, source: 'local' as const }));
+        setLocalResults(local);
+
         setSearching(true);
         if (searchTimer.current) clearTimeout(searchTimer.current);
         searchTimer.current = setTimeout(async () => {
-            const results = await searchProducts(query, 20);
-            setApiResults(results);
+            const results = await searchProducts(query, 15);
+            // Drop OFF rows that duplicate a local hit (same name+brand-ish).
+            const localKeys = new Set(local.map(l => `${(l.product.brand || '').toLowerCase()}|${l.product.name.toLowerCase()}`));
+            setOffResults(
+                results
+                    .filter(p => !localKeys.has(`${(p.brand || '').toLowerCase()}|${p.name.toLowerCase()}`))
+                    .map(p => ({ product: p, source: 'off' as const })),
+            );
             setSearching(false);
         }, 450);
         return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
     }, [searchQuery]);
 
-    const isSearching = searchQuery.trim().length > 0;
+    const isSearching = searchQuery.trim().length >= 2;
+    const searchRows = [...localResults, ...offResults];
 
     const openProduct = useCallback(async (product: Product) => {
         await saveToHistory(product);
         navigation.navigate('Result', { product });
     }, [navigation]);
 
+    const gradeFor = useCallback((p: Product): { grade: string | null } => {
+        const base = calculateNutriScore(p.nutrition || {});
+        if (!base.hasData) return { grade: null };
+        if (constraints) return { grade: calculatePersonalizedScore(p, constraints).grade };
+        return { grade: base.grade };
+    }, [constraints]);
+
     const renderHeader = useCallback(() => (
         <>
             {/* ── Hero ── */}
-            <View style={styles.hero}>
+            <View style={[styles.hero, { paddingTop: insets.top + 14 }]}>
                 <View style={styles.brandRow}>
                     <Salad color="#fff" size={20} />
                     <Text style={styles.brandText}>Padho Label</Text>
                 </View>
-                <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-                    <Text style={styles.heroGreeting}>{getGreeting()}</Text>
-                    <Text style={styles.heroTitle}>Know What You Eat</Text>
-                    <Text style={styles.heroTagline}>Scan any product for an instant, personalised health report.</Text>
-                </Animated.View>
+                <Text style={styles.heroGreeting}>{getGreeting()}</Text>
+                <Text style={styles.heroTitle}>Know what you eat</Text>
+                <Text style={styles.heroTagline}>Scan any packaged food for an instant, personalised health verdict.</Text>
 
-                <Animated.View style={[styles.scanHeroCTA, { opacity: fadeAnim }]}>
-                    <TouchableOpacity
-                        style={styles.scanHeroBtn}
-                        onPress={() => navigation.navigate('Scan')}
-                        activeOpacity={0.85}
-                    >
-                        <Camera color="#fff" size={26} />
-                        <Text style={styles.scanHeroBtnText}>Scan a Product</Text>
-                    </TouchableOpacity>
-                </Animated.View>
-            </View>
-
-            {/* Quick shortcuts */}
-            <View style={styles.shortcutsRow}>
-                <TouchableOpacity style={styles.shortcutBtn} onPress={() => navigation.navigate('Pantry')}>
-                    <View style={[styles.shortcutIcon, { backgroundColor: '#E8F5E9' }]}><Package color={Colors.accent} size={22} /></View>
-                    <Text style={styles.shortcutText}>My Pantry</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.shortcutBtn} onPress={() => navigation.navigate('History')}>
-                    <View style={[styles.shortcutIcon, { backgroundColor: Colors.primaryLight }]}><Clock color={Colors.primary} size={22} /></View>
-                    <Text style={styles.shortcutText}>Scan History</Text>
+                <TouchableOpacity
+                    style={styles.scanHeroBtn}
+                    onPress={() => navigation.navigate('Scan')}
+                    activeOpacity={0.85}
+                >
+                    <ScanBarcode color={Colors.primary} size={24} />
+                    <Text style={styles.scanHeroBtnText}>Scan a Product</Text>
                 </TouchableOpacity>
             </View>
 
@@ -131,19 +145,37 @@ export default function HomeScanScreen({ navigation }: Props) {
                     <Search color={Colors.textMuted} size={18} />
                     <TextInput
                         style={styles.searchInput}
-                        placeholder="Search products by name…"
+                        placeholder="Search Maggi, Parle-G, Bournvita…"
                         placeholderTextColor={Colors.textMuted}
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                         returnKeyType="search"
                         autoCorrect={false}
                     />
-                    {searching && <ActivityIndicator size="small" color={Colors.primary} />}
+                    {searching ? (
+                        <ActivityIndicator size="small" color={Colors.primary} />
+                    ) : searchQuery.length > 0 ? (
+                        <TouchableOpacity onPress={() => setSearchQuery('')}>
+                            <X color={Colors.textMuted} size={18} />
+                        </TouchableOpacity>
+                    ) : null}
                 </View>
             </View>
 
             {!isSearching && (
                 <>
+                    {/* Quick shortcuts */}
+                    <View style={styles.shortcutsRow}>
+                        <TouchableOpacity style={styles.shortcutBtn} onPress={() => navigation.navigate('Pantry')}>
+                            <View style={[styles.shortcutIcon, { backgroundColor: Colors.accentLight }]}><Package color={Colors.accent} size={20} /></View>
+                            <Text style={styles.shortcutText}>My Pantry</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.shortcutBtn} onPress={() => navigation.navigate('History')}>
+                            <View style={[styles.shortcutIcon, { backgroundColor: Colors.primaryLight }]}><Clock color={Colors.primary} size={20} /></View>
+                            <Text style={styles.shortcutText}>Scan History</Text>
+                        </TouchableOpacity>
+                    </View>
+
                     {/* ── Daily Tip ── */}
                     <View style={styles.tipCard}>
                         <Lightbulb color={Colors.primary} size={16} />
@@ -159,10 +191,10 @@ export default function HomeScanScreen({ navigation }: Props) {
                         </View>
                     ) : (
                         <TouchableOpacity style={styles.emptyHistoryCard} onPress={() => navigation.navigate('Scan')}>
-                            <View style={styles.emptyCircle}><Camera color={Colors.primary} size={24} /></View>
+                            <View style={styles.emptyCircle}><ScanBarcode color={Colors.primary} size={24} /></View>
                             <View style={{ flex: 1 }}>
-                                <Text style={styles.emptyTitle}>Start your health journey</Text>
-                                <Text style={styles.emptyDesc}>Scan your first product to see it here.</Text>
+                                <Text style={styles.emptyTitle}>Scan your first product</Text>
+                                <Text style={styles.emptyDesc}>Point the camera at any barcode to get the truth.</Text>
                             </View>
                             <ChevronRight color={Colors.textMuted} size={20} />
                         </TouchableOpacity>
@@ -173,51 +205,59 @@ export default function HomeScanScreen({ navigation }: Props) {
             {isSearching && (
                 <View style={styles.sectionHeader}>
                     <Text style={styles.sectionTitle}>
-                        {searching ? 'Searching…' : `Results (${apiResults.length})`}
+                        {searchRows.length > 0
+                            ? `Results (${searchRows.length})`
+                            : searching ? 'Searching…' : 'No results'}
                     </Text>
+                    {localResults.length > 0 && <Text style={styles.localBadge}>⚡ instant</Text>}
                 </View>
             )}
         </>
-    ), [fadeAnim, slideAnim, userName, tipIndex, searchQuery, searching, recentScans, isSearching, apiResults.length, navigation]);
+    ), [insets.top, userName, tipIndex, searchQuery, searching, recentScans, isSearching, localResults.length, searchRows.length, navigation]);
 
-    const data = isSearching ? apiResults : recentScans;
+    const data: SearchRow[] = isSearching
+        ? searchRows
+        : recentScans.map(p => ({ product: p, source: 'local' as const }));
 
     return (
         <FlatList
             style={styles.container}
             data={data}
-            keyExtractor={(item, idx) => item.barcode || `idx-${idx}`}
+            keyExtractor={(item, idx) => `${item.product.barcode || item.product.name}-${idx}`}
             contentContainerStyle={{ paddingBottom: 40 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             ListHeaderComponent={renderHeader}
             ListEmptyComponent={
                 isSearching && !searching ? (
-                    <Text style={styles.noResults}>No products found. Try scanning the barcode instead.</Text>
+                    <Text style={styles.noResults}>
+                        Nothing found for “{searchQuery.trim()}”. Try the barcode scanner instead — it also reads labels.
+                    </Text>
                 ) : null
             }
             renderItem={({ item }) => {
-                const rating = calculateNutriScore(item.nutrition || {});
+                const { grade } = gradeFor(item.product);
                 return (
                     <TouchableOpacity
                         style={styles.recentItem}
-                        onPress={() => openProduct(item)}
+                        onPress={() => openProduct(item.product)}
                         activeOpacity={0.8}
                     >
-                        {item.image_url ? (
-                            <Image source={{ uri: item.image_url }} style={styles.recentImg} />
+                        {item.product.image_url ? (
+                            <Image source={{ uri: item.product.image_url }} style={styles.recentImg} />
                         ) : (
                             <View style={[styles.recentImg, styles.recentImgPlaceholder]}>
-                                <Camera color={Colors.textMuted} size={18} />
+                                <ScanBarcode color={Colors.textMuted} size={18} />
                             </View>
                         )}
                         <View style={styles.recentInfo}>
-                            <Text style={styles.recentName} numberOfLines={1}>{item.name}</Text>
-                            <Text style={styles.recentBrand} numberOfLines={1}>{item.brand || 'Unknown brand'}</Text>
+                            <Text style={styles.recentName} numberOfLines={1}>{item.product.name}</Text>
+                            <Text style={styles.recentBrand} numberOfLines={1}>
+                                {item.product.brand || 'Unknown brand'}
+                                {isSearching && item.source === 'local' ? '  ·  in catalog ⚡' : ''}
+                            </Text>
                         </View>
-                        <View style={[styles.gradeDot, { backgroundColor: rating.hasData ? rating.color : Colors.textMuted }]}>
-                            <Text style={styles.gradeDotText}>{rating.grade || '?'}</Text>
-                        </View>
+                        <GradeBadge grade={grade} size={32} />
                     </TouchableOpacity>
                 );
             }}
@@ -230,23 +270,33 @@ const styles = StyleSheet.create({
 
     hero: {
         backgroundColor: Colors.primary,
-        paddingTop: 60,
-        paddingBottom: 36,
+        paddingBottom: 28,
         paddingHorizontal: Spacing.lg,
+        borderBottomLeftRadius: 28,
+        borderBottomRightRadius: 28,
     },
-    heroGreeting: { fontSize: 14, color: 'rgba(255,255,255,0.85)', fontWeight: '600', marginBottom: 4 },
-    heroTitle: { fontSize: 26, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
-    heroTagline: { fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 4, lineHeight: 18 },
-    brandRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
-    brandText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
-    scanHeroCTA: { marginTop: 20 },
+    brandRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 18 },
+    brandText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
+    heroGreeting: { fontSize: 14, color: 'rgba(255,255,255,0.9)', fontWeight: '600', marginBottom: 2 },
+    heroTitle: { fontSize: 28, fontWeight: '900', color: '#fff', letterSpacing: -0.6 },
+    heroTagline: { fontSize: 13, color: 'rgba(255,255,255,0.9)', marginTop: 6, lineHeight: 19 },
     scanHeroBtn: {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
         backgroundColor: '#fff',
-        borderRadius: Radius.full, paddingVertical: 14, paddingHorizontal: 28,
+        borderRadius: Radius.full, paddingVertical: 15, marginTop: 20,
         ...Shadow.md,
     },
-    scanHeroBtnText: { color: Colors.primary, fontSize: 17, fontWeight: '800' },
+    scanHeroBtnText: { color: Colors.primary, fontSize: 16.5, fontWeight: '900' },
+
+    searchRow: { marginHorizontal: Spacing.md, marginTop: -26 },
+    searchBox: {
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: '#fff', borderRadius: Radius.full,
+        paddingHorizontal: Spacing.md, height: 52,
+        ...Shadow.md,
+        gap: 10,
+    },
+    searchInput: { flex: 1, fontSize: 15, color: Colors.textPrimary },
 
     shortcutsRow: {
         flexDirection: 'row', justifyContent: 'space-between',
@@ -254,26 +304,16 @@ const styles = StyleSheet.create({
     },
     shortcutBtn: {
         flex: 1, flexDirection: 'row', backgroundColor: '#fff', borderRadius: Radius.lg,
-        padding: 14, alignItems: 'center', gap: 10, ...Shadow.sm,
+        padding: 13, alignItems: 'center', gap: 10, ...Shadow.sm,
     },
-    shortcutIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+    shortcutIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
     shortcutText: { fontSize: 13, fontWeight: '800', color: Colors.textPrimary },
-
-    searchRow: { marginHorizontal: Spacing.md, marginTop: Spacing.md, marginBottom: Spacing.md },
-    searchBox: {
-        flexDirection: 'row', alignItems: 'center',
-        backgroundColor: '#fff', borderRadius: Radius.full,
-        paddingHorizontal: Spacing.md, height: 52,
-        ...Shadow.sm,
-        gap: 10,
-    },
-    searchInput: { flex: 1, fontSize: 15, color: Colors.textPrimary },
 
     tipCard: {
         flexDirection: 'row', alignItems: 'flex-start', gap: 10,
         backgroundColor: '#fff',
         marginHorizontal: Spacing.md,
-        marginBottom: Spacing.md,
+        marginTop: Spacing.md,
         borderRadius: Radius.lg,
         padding: Spacing.md,
         borderLeftWidth: 3, borderLeftColor: Colors.primary,
@@ -283,29 +323,28 @@ const styles = StyleSheet.create({
 
     sectionHeader: {
         flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-        paddingHorizontal: Spacing.lg,
-        marginTop: Spacing.sm, marginBottom: Spacing.sm,
+        paddingHorizontal: Spacing.md,
+        marginTop: Spacing.md, marginBottom: Spacing.sm,
     },
-    sectionTitle: { fontSize: 18, fontWeight: '800', color: Colors.textPrimary },
-    seeAll: { fontSize: 14, color: Colors.primary, fontWeight: '700' },
+    sectionTitle: { fontSize: 17, fontWeight: '800', color: Colors.textPrimary, letterSpacing: -0.3 },
+    seeAll: { fontSize: 13, color: Colors.primary, fontWeight: '800' },
+    localBadge: { fontSize: 12, color: Colors.accent, fontWeight: '800' },
 
     recentItem: {
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: '#fff', marginHorizontal: Spacing.md,
-        borderRadius: Radius.md, padding: Spacing.md,
+        borderRadius: Radius.lg, padding: 12,
         marginBottom: Spacing.sm, gap: 12,
         ...Shadow.sm,
     },
     recentImg: {
-        width: 48, height: 48, borderRadius: Radius.sm,
-        backgroundColor: '#f9f9f9', resizeMode: 'contain',
+        width: 46, height: 46, borderRadius: Radius.sm,
+        backgroundColor: Colors.divider, resizeMode: 'contain',
     },
-    recentImgPlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0f0f0' },
+    recentImgPlaceholder: { alignItems: 'center', justifyContent: 'center' },
     recentInfo: { flex: 1 },
-    recentName: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
-    recentBrand: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-    gradeDot: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-    gradeDotText: { color: '#fff', fontWeight: '900', fontSize: 13 },
+    recentName: { fontSize: 14.5, fontWeight: '700', color: Colors.textPrimary },
+    recentBrand: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
 
     emptyHistoryCard: {
         flexDirection: 'row', alignItems: 'center', gap: 14,

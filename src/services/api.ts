@@ -37,13 +37,20 @@ const OFF_HEADERS = {
 const CATEGORY_MATCHERS: [RegExp, string][] = [
     [/biscuit/, 'biscuits'],
     [/cookie/, 'cookies'],
-    [/cereal/, 'cereals'],
+    [/noodle|pasta|vermicelli|macaroni|instant-soup/, 'noodles'],
+    [/chocolate|cocoa-bar|candy-bar/, 'chocolates'],
+    [/ice-cream|icecream|frozen-dessert|kulfi/, 'icecream'],
+    [/spread|peanut-butter|\bjam\b|jams|honey|hazelnut-spread/, 'spreads'],
+    [/ketchup|sauce|mayonnaise|chutney|dressing/, 'sauces'],
+    [/\bbread\b|breads|bun|pav|loaf/, 'breads'],
+    [/mithai|halwa|laddu|barfi|gulab-jamun|indian-sweet/, 'sweets'],
+    [/cereal|muesli|granola|\boats\b/, 'cereals'],
     [/breakfast/, 'breakfast'],
     [/\boils?\b|vegetable-oil|olive-oil|ghee/, 'oils'],
     [/soda|carbonated|cola|energy-drink|soft-drink/, 'drinks'],
     [/juice|beverage|drinks|tea|coffee|squash/, 'beverages'],
     [/dair|milk|yogurt|yoghurt|cheese|curd|paneer/, 'dairy'],
-    [/snack|chips|crisps|namkeen|wafer|nachos/, 'snacks'],
+    [/snack|chips|crisps|namkeen|wafer|nachos|bhujia/, 'snacks'],
 ];
 
 export function deriveSubCategory(categoriesTags?: string[]): string | undefined {

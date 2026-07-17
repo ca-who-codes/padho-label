@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
-import { Home, Camera, Package, User, Clock } from 'lucide-react-native';
+import { View, Platform } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Home, ScanBarcode, Package, User, Clock } from 'lucide-react-native';
 
 import HomeScanScreen from './src/screens/HomeScanScreen';
 import ScanScreen from './src/screens/ScanScreen';
@@ -18,15 +19,29 @@ import PantryScreen from './src/screens/PantryScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 
 import { RootStackParamList } from './src/types';
-import { Colors } from './src/theme';
+import { Colors, Shadow } from './src/theme';
 import { isOnboardingDone } from './src/services/userProfileService';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<RootStackParamList>();
 
+const NavTheme = {
+    ...DefaultTheme,
+    colors: {
+        ...DefaultTheme.colors,
+        background: Colors.background,
+        card: Colors.card,
+        border: Colors.border,
+        primary: Colors.primary,
+        text: Colors.textPrimary,
+    },
+};
+
 // ─── Bottom Tab Navigator ──────────────────────────────────────────────────
 
 function MainTabs() {
+    const insets = useSafeAreaInsets();
+    const bottomPad = Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 6);
     return (
         <Tab.Navigator
             screenOptions={{
@@ -34,12 +49,12 @@ function MainTabs() {
                 tabBarActiveTintColor: Colors.primary,
                 tabBarInactiveTintColor: Colors.textMuted,
                 tabBarStyle: {
-                    backgroundColor: '#fff',
+                    backgroundColor: Colors.card,
                     borderTopWidth: 1,
                     borderTopColor: Colors.border,
-                    paddingBottom: 8,
+                    paddingBottom: bottomPad,
                     paddingTop: 6,
-                    height: 64,
+                    height: 58 + bottomPad,
                 },
                 tabBarLabelStyle: { fontSize: 10, fontWeight: '700', marginTop: 2 },
             }}
@@ -69,20 +84,18 @@ function MainTabs() {
                         <View
                             style={{
                                 backgroundColor: Colors.primary,
-                                width: 52,
-                                height: 52,
-                                borderRadius: 26,
+                                width: 54,
+                                height: 54,
+                                borderRadius: 27,
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                marginTop: -16,
-                                shadowColor: Colors.primary,
-                                shadowOffset: { width: 0, height: 4 },
-                                shadowOpacity: 0.4,
-                                shadowRadius: 8,
-                                elevation: 8,
+                                marginTop: -18,
+                                borderWidth: 4,
+                                borderColor: Colors.card,
+                                ...Shadow.md,
                             }}
                         >
-                            <Camera color="#fff" size={26} />
+                            <ScanBarcode color="#fff" size={26} />
                         </View>
                     ),
                 }}
@@ -124,33 +137,38 @@ export default function App() {
     if (!ready) return null;
 
     return (
-        <NavigationContainer>
-            <StatusBar style="light" />
-            <Stack.Navigator
-                initialRouteName={showOnboarding ? 'Onboarding' : 'MainTabs'}
-                screenOptions={{ headerShown: false }}
-            >
-                <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-                <Stack.Screen name="MainTabs" component={MainTabs} />
-                {/* Detail / modal screens */}
-                <Stack.Screen name="Result" component={ResultScreen} />
-                <Stack.Screen name="Compare" component={CompareScreen} />
-                <Stack.Screen
-                    name="IngredientsSnap"
-                    component={IngredientsSnap}
-                    options={{ animation: 'slide_from_bottom' }}
-                />
-                <Stack.Screen
-                    name="Settings"
-                    component={SettingsScreen}
-                    options={{
-                        headerShown: true,
-                        title: 'Settings',
-                        headerStyle: { backgroundColor: '#fff' },
-                        headerTintColor: Colors.textPrimary,
-                    }}
-                />
-            </Stack.Navigator>
-        </NavigationContainer>
+        <SafeAreaProvider>
+            <NavigationContainer theme={NavTheme}>
+                {/* Dark text/icons by default — most screens are light. The scan
+                    screens (black camera background) override this locally. */}
+                <StatusBar style="dark" />
+                <Stack.Navigator
+                    initialRouteName={showOnboarding ? 'Onboarding' : 'MainTabs'}
+                    screenOptions={{ headerShown: false }}
+                >
+                    <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+                    <Stack.Screen name="MainTabs" component={MainTabs} />
+                    {/* Detail / modal screens */}
+                    <Stack.Screen name="Result" component={ResultScreen} />
+                    <Stack.Screen name="Compare" component={CompareScreen} />
+                    <Stack.Screen
+                        name="IngredientsSnap"
+                        component={IngredientsSnap}
+                        options={{ animation: 'slide_from_bottom' }}
+                    />
+                    <Stack.Screen
+                        name="Settings"
+                        component={SettingsScreen}
+                        options={{
+                            headerShown: true,
+                            title: 'Settings',
+                            headerStyle: { backgroundColor: Colors.card },
+                            headerTintColor: Colors.textPrimary,
+                            headerShadowVisible: false,
+                        }}
+                    />
+                </Stack.Navigator>
+            </NavigationContainer>
+        </SafeAreaProvider>
     );
 }

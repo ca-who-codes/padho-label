@@ -12,7 +12,7 @@ export type { IntelIndex } from './match';
 export { rankProducts, decisiveAxisFor } from './rank';
 export type { RankedProduct, DecisiveAxis, Grade } from './rank';
 export {
-    initIntelligence, lookup, remember, categoryProducts, intelligenceStats,
+    initIntelligence, lookup, remember, categoryProducts, searchCatalog, intelligenceStats,
 } from './store';
 export {
     enqueueContribution, exportContributions, clearContributions, contributionCount,

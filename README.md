@@ -15,14 +15,30 @@ No account. No tracking. All your data lives on your device.
 ## What it does
 
 - **Barcode scan → instant verdict.** A grade (A–E) and a 0–100 Padho Score, personalised
-  to your health profile when one is set up.
-- **Nutrition breakdown.** Per-100g and per-serving values with your personal RDA %.
+  to your health profile when one is set up — with a "why this grade" breakdown.
+- **Allergen & diet enforcement (v5).** Your declared allergies (gluten, dairy, nuts, soy,
+  egg) and diet (veg / vegan / Jain / satvik / eggitarian) are checked against every
+  ingredient list — conflicts surface as unmissable alert banners.
+- **Sugar in teaspoons (v5).** 56g/100g means nothing; "14 teaspoons" lands. Per serving
+  when the pack declares one.
+- **Smarter added-sugar analysis (v5).** Intrinsic lactose/fructose (plain milk, dahi,
+  100% juice) is no longer punished like added sugar — the engine reads the ingredient
+  list to tell the difference.
+- **Nutrition breakdown.** Per-100g values with bars against your personal daily limits.
 - **Ingredient & additive analysis.** Flags 80+ FSSAI-notified additives (E/INS numbers) by
   concern level, with notes; a separate database for cosmetics.
 - **"For You" insights.** Plain-language, rule-based bullets (no LLM, no hallucination)
   tailored to your goals and conditions.
-- **Label OCR fallback.** Product not in the database? Snap the nutrition label and the app
-  reads the values for you (via the free [OCR.space](https://ocr.space/ocrapi) API).
+- **Label OCR fallback.** Product not in the database? Snap the label — v5 extracts the
+  **ingredients list** as well as the nutrition numbers (via the free
+  [OCR.space](https://ocr.space/ocrapi) API), and lets you name unknown products so they're
+  remembered properly.
+- **~100-product Indian seed catalog (v5).** Big-brand biscuits, namkeen, noodles,
+  chocolates, drinks, dairy, spreads and more ship in the bundle — so Compare, Healthier
+  Swaps and search work offline from the first launch, and every scan you make grows the
+  on-device catalog further.
+- **Healthier swaps.** Every result shows better-scored alternatives from the same
+  category, with a Swiggy Instamart hand-off to buy them.
 - **Pantry & history.** Track what you keep at home and review past scans. Everything is
   stored locally.
 

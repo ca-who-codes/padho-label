@@ -105,7 +105,8 @@ export const runOCROnImage = async (imageUri: string): Promise<OCRResult> => {
 
 /**
  * Parse raw OCR text from a nutrition label into a NutritionData object.
- * Handles the common per-100g label formats seen on Indian/EU packaging.
+ * Handles the common per-100g label formats seen on Indian/EU packaging,
+ * including "Energy (kcal) 450" column layouts and declared trans fat.
  */
 export const parseNutritionFromText = (text: string): Partial<NutritionData> => {
     if (!text) return {};
@@ -119,24 +120,38 @@ export const parseNutritionFromText = (text: string): Partial<NutritionData> => 
         return isNaN(n) ? undefined : n;
     };
 
-    // Energy — kJ preferred; fall back to kcal (× 4.184)
-    const energyKj = num(/energ(?:y|ie)[^\d]*(\d+[.,]?\d*)\s*kj/);
-    const energyKcal = num(/(?:energ(?:y|ie)|calories?)[^\d]*(\d+[.,]?\d*)\s*kcal/);
+    // Energy — kJ preferred; fall back to kcal (× 4.184).
+    // Indian labels write both "Energy 450 kcal" and "Energy (kcal) 450".
+    const energyKj =
+        num(/energ(?:y|ie)[^\d]*(\d+[.,]?\d*)\s*kj/) ??
+        num(/energy\s*\(\s*kj\s*\)[^\d]*(\d+[.,]?\d*)/);
+    const energyKcal =
+        num(/(?:energ(?:y|ie)|calories?)[^\d]*(\d+[.,]?\d*)\s*kcal/) ??
+        num(/energy\s*\(\s*kcal\s*\)[^\d]*(\d+[.,]?\d*)/) ??
+        num(/(\d+[.,]?\d*)\s*kcal/);
     if (energyKj != null) result.energy_100g = energyKj;
     else if (energyKcal != null) result.energy_100g = Math.round(energyKcal * 4.184);
 
-    result.fat_100g = num(/(?:^|[^a-z])fat[^\d]*(\d+[.,]?\d*)\s*g/);
+    // Trans fat must be read BEFORE total fat so its value can't be mistaken.
+    result.trans_fat_100g = num(/trans[\s-]*fat(?:ty acids?)?[^\d]*(\d+[.,]?\d*)\s*g/);
 
     result.saturated_fat_100g =
-        num(/saturat(?:es?|ed fat)[^\d]*(\d+[.,]?\d*)\s*g/) ??
+        num(/saturat(?:es?|ed)(?:\s*fat(?:ty acids?)?)?[^\d]*(\d+[.,]?\d*)\s*g/) ??
         num(/sat\.?\s*fat[^\d]*(\d+[.,]?\d*)\s*g/);
 
+    result.fat_100g =
+        num(/total\s*fat[^\d]*(\d+[.,]?\d*)\s*g/) ??
+        num(/(?:^|[^a-z\-])fat[^\d]*(\d+[.,]?\d*)\s*g/);
+
     result.carbohydrates_100g =
-        num(/carbohydrat(?:e|es)[^\d]*(\d+[.,]?\d*)\s*g/) ??
+        num(/(?:total\s*)?carbohydrat(?:e|es)[^\d]*(\d+[.,]?\d*)\s*g/) ??
         num(/carbs?[^\d]*(\d+[.,]?\d*)\s*g/);
+
+    result.added_sugars_100g = num(/added\s*sugars?[^\d]*(\d+[.,]?\d*)\s*g/);
 
     result.sugars_100g =
         num(/of which[^,]*sugar[^\d]*(\d+[.,]?\d*)\s*g/) ??
+        num(/total\s*sugars?[^\d]*(\d+[.,]?\d*)\s*g/) ??
         num(/sugars?[^\d]*(\d+[.,]?\d*)\s*g/);
 
     result.fiber_100g =
@@ -145,25 +160,58 @@ export const parseNutritionFromText = (text: string): Partial<NutritionData> => 
 
     result.proteins_100g = num(/proteins?[^\d]*(\d+[.,]?\d*)\s*g/);
 
-    // Salt / sodium
+    // Salt / sodium — prefer explicit units; fall back to the >1 ⇒ mg heuristic.
     const saltVal = num(/salt[^\d]*(\d+[.,]?\d*)\s*g/);
-    const sodiumVal = num(/sodium[^\d]*(\d+[.,]?\d*)\s*(?:g|mg)/);
+    const sodiumMg = num(/sodium[^\d]*(\d+[.,]?\d*)\s*mg/);
+    const sodiumG = num(/sodium[^\d]*(\d+[.,]?\d*)\s*g/);
     if (saltVal != null) {
         result.salt_100g = saltVal;
-    } else if (sodiumVal != null) {
-        // Heuristic: values > 1 are almost certainly mg, otherwise g.
-        result.sodium_100g = sodiumVal > 1 ? sodiumVal / 1000 : sodiumVal;
-        result.salt_100g = parseFloat((result.sodium_100g * 2.5).toFixed(3));
+    } else if (sodiumMg != null || sodiumG != null) {
+        const grams = sodiumMg != null
+            ? sodiumMg / 1000
+            : (sodiumG! > 1 ? sodiumG! / 1000 : sodiumG!);
+        result.sodium_100g = grams;
+        result.salt_100g = parseFloat((grams * 2.5).toFixed(3));
     }
 
     const cholMg = num(/cholesterol[^\d]*(\d+[.,]?\d*)\s*mg/);
     if (cholMg != null) result.cholesterol_mg_100g = cholMg;
+
+    const serving = num(/serving size[^\d]*(\d+[.,]?\d*)\s*g/);
+    if (serving != null) result.serving_size_g = serving;
 
     // Drop any keys that came back undefined so callers can count real hits.
     (Object.keys(result) as (keyof NutritionData)[]).forEach(k => {
         if (result[k] == null) delete result[k];
     });
     return result;
+};
+
+// ─── Extract the ingredients list from OCR text ──────────────────────────────
+
+/** Phrases that mark the END of an ingredients block on a label. */
+const INGREDIENTS_TERMINATORS =
+    /(nutrition(?:al)? (?:information|facts)|allergen (?:advice|information)|contains added|may contain|storage|store in|net (?:wt|weight|quantity)|best before|use by|mfd|mfg|manufactured|marketed by|packed by|customer care|fssai|batch no)/i;
+
+/**
+ * Pull the ingredients list out of raw label OCR text. The screen is called
+ * "IngredientsSnap" — as of v5 it finally extracts ingredients, which is what
+ * powers additive, allergen and diet detection for products OFF doesn't know.
+ */
+export const extractIngredientsFromText = (text: string): string | null => {
+    if (!text) return null;
+    const flat = text.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ');
+    const startMatch = flat.match(/ingredients?\s*[:\-–]?\s*/i);
+    if (!startMatch || startMatch.index == null) return null;
+
+    let block = flat.slice(startMatch.index + startMatch[0].length);
+    const endMatch = block.match(INGREDIENTS_TERMINATORS);
+    if (endMatch && endMatch.index != null) block = block.slice(0, endMatch.index);
+
+    block = block.trim().replace(/[.,;\s]+$/, '');
+    // Too short to be a real list ⇒ OCR noise, don't pretend.
+    if (block.length < 12) return null;
+    return block.length > 900 ? `${block.slice(0, 900)}…` : block;
 };
 
 /**

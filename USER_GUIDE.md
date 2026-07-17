@@ -5,6 +5,25 @@ No account. No tracking. Everything stays on your phone.
 
 ---
 
+## What’s new in v5
+
+- **Allergen & diet alerts.** Declare allergies (gluten, dairy, nuts, soy, egg) and your
+  diet (veg / vegan / Jain / satvik) once — every scan is checked against them and
+  conflicts show as unmissable banners ("Contains gluten", "Not vegetarian — E120").
+- **Sugar in teaspoons.** Every sugary product shows its sugar as teaspoons, per serving
+  where the pack declares one.
+- **Fairer scores.** Plain milk, dahi and 100% juice are no longer punished as if their
+  natural sugars were added sugar.
+- **Label snap reads ingredients too.** The camera now extracts the ingredient list —
+  unlocking additive, allergen and veg checks for products no database knows. You can
+  also name unknown products so they're remembered properly.
+- **~100 Indian products built in.** Compare, healthier swaps and search work offline
+  from the very first launch.
+- **Better scanner.** Torch for dim shelves, vibration on detection, no more frozen
+  camera or double-scans.
+
+---
+
 ## Set up your profile (1 minute)
 
 On first launch, tell Padho about you — age, diet, goals (weight loss, muscle gain,
