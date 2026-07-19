@@ -26,7 +26,7 @@ const FIELDS = [
 // Open Food Facts asks every client to send a descriptive User-Agent (app + contact);
 // generic/empty UAs get rate-limited or 503'd. Keep this non-personal.
 const OFF_HEADERS = {
-    'User-Agent': 'PadhoLabel/4.0 (+https://github.com/subhamlistingsmanager/padho-label)',
+    'User-Agent': 'PadhoLabel/4.0 (+https://github.com/ca-who-codes/padho-label)',
 };
 
 /**

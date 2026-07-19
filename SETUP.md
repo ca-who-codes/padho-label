@@ -25,7 +25,7 @@
 Open **Terminal** on your Mac and run:
 
 ```bash
-cd /Users/subhamkejriwal/Documents/padho-label
+cd ~/Documents/padho-label
 
 # Link to your new GitHub repo (replace YOUR_USERNAME)
 git remote add origin https://github.com/YOUR_USERNAME/padho-label.git
@@ -94,7 +94,7 @@ Your signing keystore remains on Expo's servers and is fetched automatically dur
 
 To download and backup your keystore at any time:
 ```bash
-cd /Users/subhamkejriwal/Documents/padho-label
+cd ~/Documents/padho-label
 eas credentials --platform android
 ```
 

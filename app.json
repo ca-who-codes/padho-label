@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Padho Label",
-    "slug": "padho-label-v1-casubham",
+    "slug": "padho-label",
     "version": "5.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
