@@ -1,3 +1,5 @@
+![padho-label — offline food-label scanner · CA who codes](.github/banner.png)
+
 # Padho Label 🥗
 
 **Scan any packaged product — know instantly whether it's good for *your* body, and why.**
